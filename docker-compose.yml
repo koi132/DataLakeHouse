@@ -1,0 +1,247 @@
+services:
+# ---------- PostgreSQL ----------
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=123456
+      - POSTGRES_DB=orders
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    networks:
+      - data-network
+
+# ---------- Kafka ----------
+  kafka:
+    image: public.ecr.aws/bitnami/kafka:3.7.0
+    container_name: kafka
+    hostname: kafka
+    environment:
+      - KAFKA_ENABLE_KRAFT=yes
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092      
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD", "kafka-topics.sh", "--bootstrap-server=kafka:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - data-network
+
+# ---------- Kafka UI ----------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8084:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=kraft-cluster
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+      - KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL=PLAINTEXT
+      - KAFKA_CLUSTERS_0_READONLY=false
+      - KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME=debezium-connect
+      - KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS=http://connect:8083
+    depends_on:
+      - kafka
+      - connect
+    networks:
+      - data-network
+
+# -----------Connect----------
+  connect:
+    image: debezium/connect:2.7.0.Final
+    container_name: connect
+    ports:
+      - "8083:8083"
+    environment:
+      - BOOTSTRAP_SERVERS=kafka:9092
+      - GROUP_ID=1
+      - CONFIG_STORAGE_TOPIC=connect_configs
+      - OFFSET_STORAGE_TOPIC=connect_offsets
+      - STATUS_STORAGE_TOPIC=connect_status
+      - KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+      - VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+      - VALUE_CONVERTER_SCHEMAS_ENABLE=false
+      - KEY_CONVERTER_SCHEMAS_ENABLE=false
+      - ENABLE_DEBEZIUM_SCRIPTING=false
+    depends_on:
+      - kafka
+      - postgres
+    networks:
+      - data-network
+
+# ---------- MinIO ----------
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password123
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./minio_data:/data
+    networks:
+      - data-network
+
+# ---------- MinIO Client ----------
+  mc:
+    image: minio/mc:latest
+    container_name: minio-client
+    depends_on:
+      - minio
+    volumes:
+      - ./:/data
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 admin password123;
+      tail -f /dev/null
+      "
+    networks:
+      - data-network
+
+# ---------- Hive Metastore ----------
+  hive-metastore:
+    image: apache/hive:4.0.0
+    container_name: hive-metastore
+    environment:
+      - SERVICE_NAME=metastore
+      - DB_DRIVER=postgres
+      - HIVE_DB_NAME=orders
+      - HIVE_DB_HOST=postgres
+      - HIVE_DB_PORT=5432
+      - HIVE_DB_USER=postgres
+      - HIVE_DB_PASSWORD=123456
+      - HIVE_AUX_JARS_PATH=/opt/hive/lib/postgresql.jar
+    volumes:
+      - ./postgresql-42.7.4.jar:/opt/hive/lib/postgresql.jar
+      - ./hive/hive-site.xml:/opt/hive/conf/hive-site.xml
+    ports:
+      - "9083:9083"
+    depends_on:
+      - postgres
+    networks:
+      - data-network
+  
+# ---------- Spark ----------
+  spark-master:
+    image: apache/spark:3.4.4
+    container_name: spark-master
+    command: bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master"
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    volumes:
+      - ./spark/app:/opt/spark/app
+    depends_on:
+      - minio
+      - hive-metastore
+    networks:
+      - data-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  spark-worker:
+    image: apache/spark:3.4.4
+    container_name: spark-worker
+    command: bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077"
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    depends_on:
+      - spark-master
+    networks:
+      - data-network
+
+# ---------- Airflow ----------
+  airflow:
+    image: apache/airflow:2.9.0
+    container_name: airflow
+    command: >
+      bash -c "
+        echo '=== Starting Airflow setup ===' &&
+        airflow db migrate &&
+        airflow connections create-default-connections &&
+        airflow users create \
+          --username hoang \
+          --firstname Vo \
+          --lastname MinhHoang \
+          --role Admin \
+          --email hoang@bdas.local \
+          --password 123456 || true &&
+        echo '=== Airflow DB ready & admin user ensured ===' &&
+        airflow webserver -p 8080 & 
+        airflow scheduler
+      "
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:123456@postgres:5432/airflow
+      - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True
+      - AIRFLOW__CORE__FERNET_KEY=VmmHTQ7ypdnXrMx2IGsJCy-GElj-ybGzqiqbakBck6U=
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+    ports:
+      - "8081:8080"
+    depends_on:
+      - spark-master
+      - postgres
+    networks:
+      - data-network
+
+# ---------- Trino ----------
+  trino:
+    image: trinodb/trino:latest
+    container_name: trino
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog
+      - ./trino/config.properties:/etc/trino/config.properties
+    depends_on:
+      - hive-metastore
+    networks:
+      - data-network
+    
+# ---------- Metabase ----------
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    environment:
+      - MB_DB_TYPE=postgres
+      - MB_DB_DBNAME=metabase
+      - MB_DB_PORT=5432
+      - MB_DB_USER=postgres
+      - MB_DB_PASS=123456
+      - MB_DB_HOST=postgres
+    ports:
+      - "3000:3000"
+    depends_on:
+      - trino
+    networks:
+      - data-network
+
+networks:
+  data-network:
+    driver: bridge
+    name: data-network

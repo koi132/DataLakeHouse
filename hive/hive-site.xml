@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <!-- Trỏ metastore vào Postgres -->
+  <property>
+    <name>javax.jdo.option.ConnectionURL</name>
+    <value>jdbc:postgresql://postgres:5432/orders</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionDriverName</name>
+    <value>org.postgresql.Driver</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionUserName</name>
+    <value>postgres</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionPassword</name>
+    <value>123456</value>
+  </property>
+
+  <!-- Đường dẫn warehouse (có thể giữ nguyên, Trino/Iceberg dùng S3 riêng) -->
+  <property>
+    <name>hive.metastore.warehouse.dir</name>
+    <value>/user/hive/warehouse</value>
+  </property>
+
+  <!-- Bật metastore Thrift -->
+  <property>
+    <name>hive.metastore.uris</name>
+    <value>thrift://0.0.0.0:9083</value>
+  </property>
+</configuration>

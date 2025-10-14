@@ -1,0 +1,41 @@
+# PostgreSQL data 
+postgres_data/
+
+# MinIO object storage
+minio_data/
+
+# Kafka broker data
+kafka_data/
+
+# Hive metastore local DB and warehouse
+hive/metastore_db/
+hive/warehouse/
+
+# Spark checkpoints or outputs
+spark/checkpoints/
+spark/output/
+spark/eventlog/
+
+# Airflow logs and temporary files
+airflow/logs/
+airflow/__pycache__/
+airflow/tmp/
+
+# Airflow database 
+airflow/airflow.db
+
+__pycache__/
+*.pyc
+*.pyo
+*.log
+*.tmp
+*.swp
+*.bak
+
+*.docx
+*.pdf
+*.pptx
+*.xlsx
+*.xls
+
+.git/
