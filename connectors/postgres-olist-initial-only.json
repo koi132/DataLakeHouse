@@ -9,7 +9,7 @@
     "database.password": "123456",
     "database.dbname": "orders",
     "topic.prefix": "olist",
-    "table.include.list": "public.olist_orders,public.olist_customers,public.olist_order_items,public.olist_products,public.olist_sellers,public.olist_geolocation,public.olist_order_payments,public.olist_order_reviews,public.product_category_name_translation",
+    "table.include.list": "public.olist_orders,public.olist_customers,public.olist_order_items,public.olist_products,public.olist_sellers,public.olist_geolocation,public.olist_order_payments,public.olist_order_reviews,public.product_category_translation",
     "slot.name": "olist_slot_snapshot",
     "publication.autocreate.mode": "filtered",
     "tombstones.on.delete": "false",
