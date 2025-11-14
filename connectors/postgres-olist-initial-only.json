@@ -1,0 +1,24 @@
+{
+  "name": "postgres-olist-initial-only",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "plugin.name": "pgoutput",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "postgres",
+    "database.password": "123456",
+    "database.dbname": "orders",
+    "topic.prefix": "olist",
+    "table.include.list": "public.olist_orders,public.olist_customers,public.olist_order_items,public.olist_products,public.olist_sellers,public.olist_geolocation,public.olist_order_payments,public.olist_order_reviews,public.product_category_name_translation",
+    "slot.name": "olist_slot_snapshot",
+    "publication.autocreate.mode": "filtered",
+    "tombstones.on.delete": "false",
+
+    "snapshot.mode": "initial_only",
+    "snapshot.max.threads": "4",
+    "snapshot.fetch.size": "10000",
+    "max.batch.size": "2048",
+    "max.queue.size": "8192",
+    "heartbeat.interval.ms": "10000"
+  }
+}
