@@ -274,4 +274,3 @@ services:
 networks:
   data-network:
     driver: bridge
-    name: data-network

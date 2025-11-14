@@ -134,7 +134,7 @@ def process_topic(topic_name, schema):
     df_parsed.writeStream \
         .format("delta") \
         .option("path", f"s3a://bronze/{topic_name}/") \
-        .option("checkpointLocation", f"s3a://bronze//tmp/checkpoints/{topic_name}/") \
+        .option("checkpointLocation", f"s3a://bronze/tmp/checkpoints/{topic_name}/") \
         .outputMode("append") \
         .start()
 
