@@ -7,12 +7,18 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=123456
       - POSTGRES_DB=orders
+      - POSTGRES_INITDB_ARGS=--wal-level=logical
     ports:
       - "5432:5432"
     volumes:
       - ./postgres_data:/var/lib/postgresql/data
     networks:
       - data-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 # ---------- Kafka ----------
   kafka:
@@ -79,6 +85,8 @@ services:
     depends_on:
       - kafka
       - postgres
+    volumes:
+      - ./connectors:/kafka/connectors
     networks:
       - data-network
 
@@ -97,13 +105,16 @@ services:
       - ./minio_data:/data
     networks:
       - data-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 # ---------- MinIO Client ----------
   mc:
     image: minio/mc:latest
     container_name: minio-client
-    depends_on:
-      - minio
     volumes:
       - ./:/data
     entrypoint: >
@@ -113,6 +124,9 @@ services:
       "
     networks:
       - data-network
+    depends_on:
+      minio:
+        condition: service_healthy
 
 # ---------- Hive Metastore ----------
   hive-metastore:
@@ -133,22 +147,29 @@ services:
     ports:
       - "9083:9083"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+
     networks:
       - data-network
   
 # ---------- Spark ----------
   spark-master:
-    image: apache/spark:3.4.4
+    image: apache/spark:3.5.1
     container_name: spark-master
     command: bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master"
     environment:
       - SPARK_MODE=master
+      - KAFKA_BROKER=kafka:9092
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password123
+      - AWS_REGION=us-east-1
     ports:
       - "8080:8080"
       - "7077:7077"
     volumes:
       - ./spark/app:/opt/spark/app
+      - ./spark/ivy2:/home/spark/.ivy2
     depends_on:
       - minio
       - hive-metastore
@@ -161,16 +182,23 @@ services:
       retries: 10
 
   spark-worker:
-    image: apache/spark:3.4.4
+    image: apache/spark:3.5.1
     container_name: spark-worker
     command: bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077"
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
+      - KAFKA_BROKER=kafka:9092
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password123
+      - AWS_REGION=us-east-1
     depends_on:
       - spark-master
     networks:
       - data-network
+    volumes:
+      - ./spark/app:/opt/spark/app
+      - ./spark/ivy2:/home/spark/.ivy2
 
 # ---------- Airflow ----------
   airflow:
@@ -236,6 +264,8 @@ services:
       - MB_DB_HOST=postgres
     ports:
       - "3000:3000"
+    volumes:
+      - ./metabase:/metabase-data
     depends_on:
       - trino
     networks:

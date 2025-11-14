@@ -24,6 +24,18 @@ airflow/tmp/
 # Airflow database 
 airflow/airflow.db
 
+# Ignore connectors folder
+connectors/
+
+# Ignore dataset folder
+dataset/
+
+# Ignore specific file
+spark/app/stream_kafka_to_bronze.py
+
+# Ignore ivy2 folder
+spark/ivy2/
+
 __pycache__/
 *.pyc
 *.pyo
