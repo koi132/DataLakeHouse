@@ -27,8 +27,10 @@ airflow/airflow.db
 # Ignore dataset folder
 dataset/
 
-# Ignore ivy2 folder
+# Ignore ivy2
 spark/ivy2/
+ivy2/
+.ivy2/
 
 __pycache__/
 *.pyc
