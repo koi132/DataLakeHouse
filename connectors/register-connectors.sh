@@ -19,9 +19,11 @@ until curl -s ${CONNECT_URL}/connectors >/dev/null 2>&1; do
 done
 
 echo "Kafka Connect REST API is ready!"
-echo "Starting to register connectors..."
+
+echo "Registering connectors from JSON files..."
 
 CONNECTORS_DIR="$(dirname "$0")"
+
 FOUND=false
 
 for f in ${CONNECTORS_DIR}/*.json; do
@@ -38,4 +40,4 @@ if [ "$FOUND" = false ]; then
   echo "No connector JSON files found in ${CONNECTORS_DIR}"
 fi
 
-echo "All connectors processed successfully!"
+echo "All connectors processed!"

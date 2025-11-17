@@ -1,6 +1,8 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col
 from pyspark.sql.types import *
+from pyspark.sql.functions import udf
+from pyspark.sql import DataFrame
 import os
 
 # Cấu hình SparkSession 
@@ -22,7 +24,7 @@ spark = (
     .getOrCreate()
 )
 
-# Khai báo schema theo bảng 
+# schema theo bảng 
 schemas = {
     "olist.public.olist_orders": StructType([
         StructField("order_id", StringType()),
@@ -121,26 +123,53 @@ df_kafka = (
 df_json = df_kafka.selectExpr("topic", "CAST(value AS STRING) as json_value")
 
 # Định nghĩa hàm parse động
-from pyspark.sql.functions import udf
-from pyspark.sql import DataFrame
+def process_topic(topic_name: str, table_schema: StructType):
+    cdc_payload_schema = StructType([
+        StructField("before", table_schema),
+        StructField("after", table_schema),
+        StructField("op", StringType()),
+        StructField("ts_ms", LongType())
+        # Nếu cần thêm: source, transaction... có thể khai báo thêm
+    ])
 
-def process_topic(topic_name, schema):
+    envelope_schema = StructType([
+        StructField("payload", cdc_payload_schema)
+    ])
+
     df_topic = df_json.filter(col("topic") == topic_name)
-    schema_with_payload = StructType().add("payload", StructType().add("after", schema))
-    df_parsed = df_topic.select(
-        from_json(col("json_value"), schema_with_payload).alias("data")
-    ).select("data.payload.after.*")
 
-    df_parsed.writeStream \
-        .format("delta") \
-        .option("path", f"s3a://bronze/{topic_name}/") \
-        .option("checkpointLocation", f"s3a://bronze/tmp/checkpoints/{topic_name}/") \
-        .outputMode("append") \
+    df_parsed = (
+        df_topic
+        .select(
+            col("topic"),
+            from_json(col("json_value"), envelope_schema).alias("data")
+        )
+        .select(
+            col("topic"),
+            col("data.payload.before").alias("before"),
+            col("data.payload.after").alias("after"),
+            col("data.payload.op").alias("op"),
+            col("data.payload.ts_ms").alias("ts_ms")
+        )
+    )
+
+    query = (
+        df_parsed.writeStream
+        .format("delta")
+        .option("path", f"s3a://bronze/{topic_name}/")
+        .option("checkpointLocation", f"s3a://bronze/tmp/checkpoints/{topic_name}/")
+        .outputMode("append")
         .start()
+    )
+
+    return query
+
 
 # Khởi chạy stream cho từng topic
+queries = []
 for topic, schema in schemas.items():
-    process_topic(topic, schema)
+    q = process_topic(topic, schema)
+    queries.append(q)
 
+print(">>> All CDC Bronze streams started. Waiting for termination...")
 spark.streams.awaitAnyTermination()
-

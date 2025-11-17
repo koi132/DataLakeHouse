@@ -1,32 +1,88 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
   <!-- Trỏ metastore vào Postgres -->
-  <property>
+   <property>
     <name>javax.jdo.option.ConnectionURL</name>
     <value>jdbc:postgresql://postgres:5432/orders</value>
   </property>
+
   <property>
     <name>javax.jdo.option.ConnectionDriverName</name>
     <value>org.postgresql.Driver</value>
   </property>
+
   <property>
     <name>javax.jdo.option.ConnectionUserName</name>
     <value>postgres</value>
   </property>
+
   <property>
     <name>javax.jdo.option.ConnectionPassword</name>
     <value>123456</value>
   </property>
 
-  <!-- Đường dẫn warehouse (có thể giữ nguyên, Trino/Iceberg dùng S3 riêng) -->
-  <property>
-    <name>hive.metastore.warehouse.dir</name>
-    <value>/user/hive/warehouse</value>
-  </property>
-
-  <!-- Bật metastore Thrift -->
+  <!-- Hive Metastore Thrift -->
   <property>
     <name>hive.metastore.uris</name>
-    <value>thrift://0.0.0.0:9083</value>
+    <value>thrift://hive-metastore:9083</value>
   </property>
+
+  <!-- Warehouse trên MinIO -->
+  <property>
+    <name>hive.metastore.warehouse.dir</name>
+    <value>s3a://bronze/warehouse</value>
+  </property>
+
+  <!-- S3A Config for MinIO -->
+  <property>
+    <name>fs.s3a.endpoint</name>
+    <value>http://minio:9000</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.access.key</name>
+    <value>admin</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.secret.key</name>
+    <value>password123</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.path.style.access</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.connection.ssl.enabled</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.aws.credentials.provider</name>
+    <value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.impl</name>
+    <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+  </property>
+
+  <!-- Committer để Delta Lake hoạt động với S3 -->
+  <property>
+    <name>fs.s3a.committer.name</name>
+    <value>directory</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.committer.magic.enabled</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.committer.staging.conflict-mode</name>
+    <value>replace</value>
+  </property>
+  
 </configuration>
