@@ -7,7 +7,8 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=123456
       - POSTGRES_DB=orders
-      # - POSTGRES_INITDB_ARGS=--wal-level=logical
+      
+      - POSTGRES_INITDB_ARGS=--wal-level=logical
     ports:
       - "5432:5432"
     volumes:
@@ -205,6 +206,7 @@ services:
   airflow:
     image: apache/airflow:2.9.0
     container_name: airflow
+    user: root
     command: >
       bash -c "
         echo '=== Starting Airflow setup ===' &&
@@ -230,6 +232,7 @@ services:
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8081:8080"
     depends_on:

@@ -25,7 +25,7 @@ CREATE TABLE olist_products (
     product_width_cm INT
 );
 
-CREATE TABLE product_category_name_translation (
+CREATE TABLE product_category_translation (
     product_category_name TEXT,
     product_category_name_english TEXT
 );
