@@ -26,8 +26,8 @@ airflow/airflow.db
 
 # Ignore dataset folder
 dataset/
-
-# Ignore ivy2
+note.txt
+# Ignore ivy2 folder
 spark/ivy2/
 ivy2/
 .ivy2/
