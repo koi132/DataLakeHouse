@@ -53,32 +53,32 @@ Hệ thống Data Lakehouse xử lý và phân tích dữ liệu thương mại 
 DataLakeHouse/
 ├── airflow/
 │   ├── dags/
-│   │   └── bronze_to_silver_dag.py      # Airflow DAG xử lý Silver layer
-│   └── logs/                             # Airflow execution logs
+│   │   └── bronze_to_silver_dag.py     
+│   └── logs/                             
 ├── connectors/
-│   ├── postgres-olist-initial.json       # Debezium connector config
-│   └── register-connectors.sh            # Script đăng ký connectors
+│   ├── postgres-olist-initial.json      
+│   └── register-connectors.sh            
 ├── dataset/
-│   ├── *.csv                             # Olist raw data files
-│   └── import_raw.sql                    # SQL import script
+│   ├── *.csv                             
+│   └── import_raw.sql                   
 ├── minio_data/
-│   ├── bronze/                           # Raw CDC data (Parquet)
-│   └── silver/                           # Cleansed data (Delta Lake)
-├── postgres_data/                        # PostgreSQL data volume
+│   ├── bronze/                          
+│   └── silver/                           
+├── postgres_data/                       
 ├── spark/
 │   └── app/
-│       ├── process_bronze_to_silver.py   # Main ETL script
-│       ├── show_customers.py             # Data visualization script
-│       └── validate_silver_quality.py    # Data quality checks
+│       ├── process_bronze_to_silver.py   
+│       ├── show_customers.py             
+│       └── validate_silver_quality.py    
 ├── Script/
-│   ├── create_tables.sql                 # DDL scripts
-│   └── import_raw.sql                    # Data import
+│   ├── create_tables.sql                
+│   └── import_raw.sql                   
 ├── trino/
-│   ├── catalog/                          # Trino catalog configs
-│   └── config.properties                 # Trino configuration
+│   ├── catalog/                       
+│   └── config.properties                
 ├── hive/
-│   └── hive-site.xml                     # Hive metastore config
-└── docker-compose.yml                    # Infrastructure definition
+│   └── hive-site.xml                     
+└── docker-compose.yml                    
 ```
 
 ## 🚀 Hướng dẫn cài đặt
@@ -101,38 +101,175 @@ cd DataLakeHouse
 
 ### 3. Khởi động hệ thống
 ```bash
-# Start all services
-docker-compose up -d
+# Start all services (build if needed)
+docker-compose up --build -d
 
-# Verify services
-docker-compose ps
+# Verify all services are running
+docker ps
 ```
 
-### 4. Import dữ liệu Olist
+### 4. Tạo databases
 ```bash
-# Copy CSV files to PostgreSQL container
+# Create Airflow database
+docker exec -it postgres psql -U postgres -c "CREATE DATABASE airflow;"
+
+# Create Metabase database
+docker exec -it postgres psql -U postgres -c "CREATE DATABASE metabase;"
+```
+
+### 5. Import dữ liệu Olist
+
+**Step 1: Copy files vào PostgreSQL container**
+```bash
+# Copy dataset CSV files
 docker cp dataset/. postgres:/tmp/
 
-# Import data
-docker exec -it postgres psql -U postgres -d orders -f /tmp/import_raw.sql
+# Copy SQL scripts
+docker cp Script/. postgres:/tmp/
 ```
 
-### 5. Đăng ký Debezium connector
+**Step 2: Tạo tables trong database orders**
 ```bash
-# Register connector
-bash connectors/register-connectors.sh
+# Access PostgreSQL container
+docker exec -it postgres bash
+
+# View create tables script
+cat /tmp/create_tables.sql
+
+# Execute DDL script
+psql -U postgres -d orders -f /tmp/create_tables.sql
+
+# Exit container
+exit
 ```
 
-### 6. Chạy Bronze → Silver ETL
+**Step 3: Import dữ liệu vào tables**
 ```bash
-# Option 1: Manual execution
+# Access PostgreSQL container
+docker exec -it postgres bash
+
+# View import script
+cat /tmp/import_raw.sql
+
+# Execute import script
+psql -U postgres -d orders -f /tmp/import_raw.sql
+
+# Exit container
+exit
+```
+
+### 6. Đăng ký Debezium CDC Connector
+
+**Register connector để capture changes**
+```bash
+# Navigate to connectors directory
+cd connectors
+
+# Register PostgreSQL source connector
+bash register-connectors.sh
+```
+
+**Verify connector status**
+```bash
+# Check connector via API
+curl http://localhost:8083/connectors/postgres-olist-source/status
+
+# Or check via Kafka UI
+# Open: http://localhost:8084
+# Navigate to: Kafka Connect → Connectors
+```
+
+### 7. Initial Bulk Load và CDC
+
+**Kiểm tra Kafka topics**
+```
+Open Kafka UI: http://localhost:8084
+Navigate to: Topics
+
+Expected topics (9 tables):
+- olist.public.olist_customers
+- olist.public.olist_orders
+- olist.public.olist_order_items
+- olist.public.olist_order_payments
+- olist.public.olist_order_reviews
+- olist.public.olist_products
+- olist.public.olist_sellers
+- olist.public.olist_geolocation
+- olist.public.product_category_translation
+```
+
+**Test CDC với insert mẫu**
+```bash
+# Connect to PostgreSQL
+docker exec -it postgres psql -U postgres -d orders
+
+# Insert test data
+INSERT INTO olist_customers (customer_id, customer_unique_id, customer_zip_code_prefix, customer_city, customer_state)
+VALUES ('test123', 'unique123', '12345', 'Test City', 'SP');
+
+# Verify in Kafka UI - check topic messages
+```
+
+### 8. Bronze Layer - Kafka to MinIO
+
+**Chạy streaming job để đưa data từ Kafka sang Bronze layer**
+```bash
+# Access Spark master container
+docker exec -it spark-master bash
+
+# Submit Spark streaming job
+/opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,\
+org.apache.kafka:kafka-clients:3.5.1,\
+org.apache.hadoop:hadoop-aws:3.3.2,\
+com.amazonaws:aws-java-sdk-bundle:1.12.262,\
+io.delta:delta-spark_2.12:3.2.0 \
+  /opt/spark/app/stream_kafka_to_bronze.py
+```
+
+**Verify Bronze data in MinIO**
+```
+Open MinIO Console: http://localhost:9001
+Credentials: admin / password123
+Navigate to: Buckets → bronze
+
+Expected structure:
+bronze/
+├── olist.public.olist_customers/
+├── olist.public.olist_orders/
+├── olist.public.olist_order_items/
+└── ... (9 tables total)
+```
+
+### 9. Silver Layer - Bronze to Silver ETL
+
+**Option 1: Manual execution**
+```bash
 docker exec spark-master /opt/spark/bin/spark-submit \
   --master local[*] \
   --packages io.delta:delta-spark_2.12:3.2.0,org.apache.hadoop:hadoop-aws:3.3.4 \
   /opt/spark/app/process_bronze_to_silver.py
+```
 
-# Option 2: Via Airflow UI
-# Access http://localhost:8081
+**Option 2: Via Airflow UI**
+```
+Open Airflow: http://localhost:8081
+Credentials: hoang / 123456
+DAG: bronze_to_silver_processing
+Click: Trigger DAG
+```
+
+**Verify Silver data**
+```bash
+# Via MinIO Console
+# Navigate to: silver/ bucket
+
+# Via PySpark script
+docker exec spark-master /opt/spark/bin/spark-submit \
+  --master local[*] \
+  --packages io.delta:delta-spark_2.12:3.2.0,org.apache.hadoop:hadoop-aws:3.3.4 \
+  /opt/spark/app/show_customers.py
 # Username: hoang / Password: 123456
 # Trigger DAG: bronze_to_silver_processing
 ```
@@ -463,6 +600,15 @@ docker exec spark-master /opt/spark/bin/spark-submit \
   --master local[*] \
   --packages io.delta:delta-spark_2.12:3.2.0,org.apache.hadoop:hadoop-aws:3.3.4 \
   /opt/spark/app/show_customers.py
+```
+
+### 10. Data Quality Validation
+```bash
+# Run validation checks on Silver layer
+docker exec spark-master /opt/spark/bin/spark-submit \
+  --master local[*] \
+  --packages io.delta:delta-spark_2.12:3.2.0,org.apache.hadoop:hadoop-aws:3.3.4 \
+  /opt/spark/app/validate_silver_quality.py
 ```
 
 **Via MinIO Console**:
