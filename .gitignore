@@ -4,9 +4,12 @@ postgres_data/
 # MinIO object storage
 minio_data/
 
+#metastore_db/
+metabase/
+
 # Kafka broker data
 kafka_data/
-
+connector_data/
 # Hive metastore local DB and warehouse
 hive/metastore_db/
 hive/warehouse/
