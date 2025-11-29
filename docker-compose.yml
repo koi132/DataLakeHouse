@@ -7,7 +7,6 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=123456
       - POSTGRES_DB=orders
-      
       - POSTGRES_INITDB_ARGS=--wal-level=logical
     ports:
       - "5432:5432"
@@ -113,16 +112,20 @@ services:
       timeout: 5s
       retries: 5
 
-# ---------- MinIO Client ----------
-  mc:
+# ---------- MinIO Init (Create Buckets) ----------
+  minio-init:
     image: minio/mc:latest
-    container_name: minio-client
+    container_name: minio-init
     volumes:
       - ./:/data
     entrypoint: >
       /bin/sh -c "
       mc alias set local http://minio:9000 admin password123;
-      tail -f /dev/null
+      mc mb local/bronze --ignore-existing;
+      mc mb local/silver --ignore-existing;
+      mc mb local/gold --ignore-existing;
+      echo 'Buckets created: bronze, silver, gold';
+      exit 0
       "
     networks:
       - data-network
@@ -132,7 +135,10 @@ services:
 
 # ---------- Hive Metastore ----------
   hive-metastore:
-    image: apache/hive:4.0.0
+    build:
+      context: ./hive
+      dockerfile: Dockerfile
+    image: hive-metastore-s3:4.0.0
     container_name: hive-metastore
     environment:
       - SERVICE_NAME=metastore
@@ -142,16 +148,13 @@ services:
       - HIVE_DB_PORT=5432
       - HIVE_DB_USER=postgres
       - HIVE_DB_PASSWORD=123456
-      - HIVE_AUX_JARS_PATH=/opt/hive/lib/postgresql.jar
     volumes:
-      - ./postgresql-42.7.4.jar:/opt/hive/lib/postgresql.jar
       - ./hive/hive-site.xml:/opt/hive/conf/hive-site.xml
     ports:
       - "9083:9083"
     depends_on:
       postgres:
         condition: service_healthy
-
     networks:
       - data-network
   
@@ -194,6 +197,8 @@ services:
       - AWS_ACCESS_KEY_ID=admin
       - AWS_SECRET_ACCESS_KEY=password123
       - AWS_REGION=us-east-1
+      - SPARK_WORKER_CORES=10
+      - SPARK_WORKER_MEMORY=4g
     depends_on:
       - spark-master
     networks:
@@ -207,22 +212,14 @@ services:
     image: apache/airflow:2.9.0
     container_name: airflow
     user: root
-    command: >
-      bash -c "
-        echo '=== Starting Airflow setup ===' &&
-        airflow db migrate &&
-        airflow connections create-default-connections &&
-        airflow users create \
-          --username hoang \
-          --firstname Vo \
-          --lastname MinhHoang \
-          --role Admin \
-          --email hoang@bdas.local \
-          --password 123456 || true &&
-        echo '=== Airflow DB ready & admin user ensured ===' &&
-        airflow webserver -p 8080 & 
-        airflow scheduler
-      "
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create -u airflow -p airflow -f Airflow -l Admin -r Admin -e airflow@example.com || true
+        airflow webserver -p 8080 &
+        exec airflow scheduler
     environment:
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
