@@ -4,11 +4,24 @@ from pyspark.sql.functions import (
     to_timestamp, coalesce, lit, current_timestamp,
     year, month, dayofmonth, hour, date_format,
     datediff, abs as spark_abs, round as spark_round,
-    row_number, desc, avg
+    row_number, desc, avg, from_unixtime
 )
 from pyspark.sql.window import Window
-from pyspark.sql.types import DoubleType, IntegerType, StringType
+from pyspark.sql.types import DoubleType, IntegerType, StringType, TimestampType
 from delta.tables import DeltaTable
+
+# Helper function để convert timestamp - xử lý cả 2 trường hợp:
+# 1. Nếu data đã là TIMESTAMP (từ Bronze cũ) -> giữ nguyên
+# 2. Nếu data là LONG/milliseconds (từ Debezium với time.precision.mode=connect) -> convert
+def safe_to_timestamp(column):
+    """Safely convert column to timestamp, handling both TIMESTAMP and LONG types"""
+    # Nếu đã là timestamp thì giữ nguyên, nếu là số thì convert từ milliseconds
+    return when(
+        column.cast("string").rlike("^[0-9]+$"),  # Nếu là số (milliseconds từ Debezium)
+        from_unixtime(column.cast("long") / 1000).cast(TimestampType())  # Chia 1000 cho milliseconds
+    ).otherwise(
+        column.cast(TimestampType())  # Nếu đã là timestamp hoặc string timestamp
+    )
 
 # Cấu hình SparkSession với Delta Lake và S3
 spark = (
@@ -25,8 +38,15 @@ spark = (
     .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
     .config("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "CORRECTED")
     .config("spark.sql.legacy.parquet.int96RebaseModeInWrite", "CORRECTED")
+    # Hive Metastore Configuration for Trino
+    .config("spark.sql.catalogImplementation", "hive")
+    .config("hive.metastore.uris", "thrift://hive-metastore:9083")
+    .config("spark.sql.warehouse.dir", "s3a://silver/")
+    .enableHiveSupport()
     .getOrCreate()
 )
+
+spark.sparkContext.setLogLevel("WARN")
 
 print("=" * 80)
 print("Starting Bronze to Silver Layer Processing")
@@ -74,7 +94,6 @@ def process_customers():
     
     print(f"   ✓ Processed {df_silver.count()} customers")
 
-
 # ============================================================================
 # 2. GEOLOCATION - Clean and aggregate
 # ============================================================================
@@ -82,10 +101,12 @@ def process_geolocation():
     print("\n[2/9] Processing Geolocation...")
     
     df_bronze = spark.read.format("delta").load("s3a://bronze/olist.public.olist_geolocation/")
+    print(f"   Bronze records: {df_bronze.count()}")
+    
     df_latest = df_bronze.filter(col("op") != "d")
     df_clean = df_latest.select("after.*")
     
-    # Convert lat/lng to double và validate
+    # Convert lat/lng to double - handle different data types
     df_typed = df_clean.select(
         trim(col("geolocation_zip_code_prefix")).alias("zip_code_prefix"),
         col("geolocation_lat").cast(DoubleType()).alias("latitude"),
@@ -102,6 +123,7 @@ def process_geolocation():
         (col("latitude").between(-90, 90)) &
         (col("longitude").between(-180, 180))
     )
+    print(f"   Valid coordinates: {df_valid.count()}")
     
     # Aggregate: lấy trung bình tọa độ cho mỗi zip code
     df_silver = df_valid.groupBy("zip_code_prefix", "city", "state") \
@@ -223,7 +245,6 @@ def process_products():
     
     print(f"   ✓ Processed {df_silver.count()} products")
 
-
 # ============================================================================
 # 6. ORDERS - Clean and add business logic
 # ============================================================================
@@ -244,11 +265,11 @@ def process_orders():
         trim(col("order_id")).alias("order_id"),
         trim(col("customer_id")).alias("customer_id"),
         upper(trim(col("order_status"))).alias("order_status"),
-        col("order_purchase_timestamp"),
-        col("order_approved_at"),
-        col("order_delivered_carrier_date"),
-        col("order_delivered_customer_date"),
-        col("order_estimated_delivery_date")
+        safe_to_timestamp(col("order_purchase_timestamp")).alias("order_purchase_timestamp"),
+        safe_to_timestamp(col("order_approved_at")).alias("order_approved_at"),
+        safe_to_timestamp(col("order_delivered_carrier_date")).alias("order_delivered_carrier_date"),
+        safe_to_timestamp(col("order_delivered_customer_date")).alias("order_delivered_customer_date"),
+        safe_to_timestamp(col("order_estimated_delivery_date")).alias("order_estimated_delivery_date")
     ).filter(col("order_id").isNotNull())
     
     # Business logic: Calculate delivery metrics
@@ -313,15 +334,15 @@ def process_order_items():
     df_latest = df_bronze.filter(col("op") != "d")
     df_clean = df_latest.select("after.*")
     
-    # Clean and validate
+    # Clean and validate - cast string to proper types
     df_silver = df_clean.select(
         trim(col("order_id")).alias("order_id"),
-        col("order_item_id"),
+        col("order_item_id").cast(IntegerType()).alias("order_item_id"),
         trim(col("product_id")).alias("product_id"),
         trim(col("seller_id")).alias("seller_id"),
-        col("shipping_limit_date"),
-        col("price"),
-        col("freight_value")
+        safe_to_timestamp(col("shipping_limit_date")).alias("shipping_limit_date"),
+        col("price").cast(DoubleType()).alias("price"),
+        col("freight_value").cast(DoubleType()).alias("freight_value")
     ).filter(
         col("order_id").isNotNull() & 
         col("order_item_id").isNotNull()
@@ -352,32 +373,41 @@ def process_order_payments():
     print("\n[8/9] Processing Order Payments...")
     
     df_bronze = spark.read.format("delta").load("s3a://bronze/olist.public.olist_order_payments/")
+    print(f"   Bronze records: {df_bronze.count()}")
+    
     df_latest = df_bronze.filter(col("op") != "d")
+    print(f"   After filter op != 'd': {df_latest.count()}")
+    
     df_clean = df_latest.select("after.*")
     
-    # Clean and standardize
+    # Clean and standardize - cast string to proper types
     df_silver = df_clean.select(
         trim(col("order_id")).alias("order_id"),
-        col("payment_sequential"),
+        col("payment_sequential").cast(IntegerType()).alias("payment_sequential"),
         upper(trim(col("payment_type"))).alias("payment_type"),
-        col("payment_installments"),
-        col("payment_value")
+        col("payment_installments").cast(IntegerType()).alias("payment_installments"),
+        col("payment_value").cast(DoubleType()).alias("payment_value")
     ).filter(
         col("order_id").isNotNull() & 
-        col("payment_value").isNotNull()
+        (trim(col("order_id")) != "")
     )
+    print(f"   After filter order_id not null: {df_silver.count()}")
     
-    # Add business logic
+    # Add business logic - handle null payment_value
     df_silver = df_silver \
         .withColumn(
             "installment_value",
-            when(col("payment_installments") > 0,
-                 spark_round(col("payment_value") / col("payment_installments"), 2)
+            when(
+                col("payment_installments").isNotNull() & 
+                (col("payment_installments") > 0) &
+                col("payment_value").isNotNull(),
+                spark_round(col("payment_value") / col("payment_installments"), 2)
             ).otherwise(col("payment_value"))
         ) \
         .withColumn(
             "is_installment_payment",
-            col("payment_installments") > 1
+            when(col("payment_installments").isNotNull(), col("payment_installments") > 1)
+            .otherwise(False)
         ) \
         .withColumn("processed_at", current_timestamp())
     
@@ -408,11 +438,11 @@ def process_order_reviews():
     df_silver = df_dedup.select(
         trim(col("review_id")).alias("review_id"),
         trim(col("order_id")).alias("order_id"),
-        col("review_score"),
+        col("review_score").cast(IntegerType()).alias("review_score"),
         trim(col("review_comment_title")).alias("review_comment_title"),
         trim(col("review_comment_message")).alias("review_comment_message"),
-        col("review_creation_date"),
-        col("review_answer_timestamp")
+        safe_to_timestamp(col("review_creation_date")).alias("review_creation_date"),
+        safe_to_timestamp(col("review_answer_timestamp")).alias("review_answer_timestamp")
     ).filter(
         col("review_id").isNotNull() & 
         col("order_id").isNotNull()
@@ -438,7 +468,8 @@ def process_order_reviews():
                 col("review_answer_timestamp").isNotNull() & 
                 col("review_creation_date").isNotNull(),
                 spark_round(
-                    (col("review_answer_timestamp").cast("long") - col("review_creation_date").cast("long")) / 3600, 2
+                    (col("review_answer_timestamp").cast("double") - 
+                     col("review_creation_date").cast("double")) / 3600.0, 2
                 )
             ).otherwise(None)
         ) \
@@ -450,6 +481,54 @@ def process_order_reviews():
         .save("s3a://silver/olist_order_reviews/")
     
     print(f"   ✓ Processed {df_silver.count()} order reviews")
+
+
+# ============================================================================
+# 10. REGISTER HIVE CATALOG - For Trino Query (Delta Lake format)
+# ============================================================================
+def register_hive_tables():
+    
+    print("\n[10/10] Registering tables to Hive Metastore (Delta format)...")
+    
+    # Create database if not exists
+    spark.sql("CREATE DATABASE IF NOT EXISTS silver")
+    spark.sql("USE silver")
+    
+    # Define all tables with their paths
+    tables_config = {
+        "olist_customers": "s3a://silver/olist_customers/",
+        "olist_geolocation": "s3a://silver/olist_geolocation/",
+        "olist_sellers": "s3a://silver/olist_sellers/",
+        "olist_product_category_translation": "s3a://silver/olist_product_category_translation/",
+        "olist_products": "s3a://silver/olist_products/",
+        "olist_orders": "s3a://silver/olist_orders/",
+        "olist_order_items": "s3a://silver/olist_order_items/",
+        "olist_order_payments": "s3a://silver/olist_order_payments/",
+        "olist_order_reviews": "s3a://silver/olist_order_reviews/"
+    }
+    
+    for table_name, path in tables_config.items():
+        try:
+            # Drop existing table (if any)
+            spark.sql(f"DROP TABLE IF EXISTS silver.{table_name}")
+            
+            # Create Delta table in Hive Metastore
+            # This registers the Delta table location in metastore
+            spark.sql(f"""
+                CREATE TABLE IF NOT EXISTS silver.{table_name}
+                USING DELTA
+                LOCATION '{path}'
+            """)
+            
+            print(f"   ✓ Registered: silver.{table_name}")
+            
+        except Exception as e:
+            print(f"   ✗ Failed to register {table_name}: {str(e)}")
+    
+    # Show registered tables
+    print("\n   Registered tables in Hive Metastore:")
+    spark.sql("SHOW TABLES IN silver").show(truncate=False)
+    print("   ✓ Hive catalog registration completed!")
 
 
 # ============================================================================
@@ -466,6 +545,9 @@ if __name__ == "__main__":
         process_order_items()
         process_order_payments()
         process_order_reviews()
+        
+        # Register tables to Hive Metastore for Trino query
+        register_hive_tables()
         
         print("\n" + "=" * 80)
         print("✓ Silver Layer Processing Completed Successfully!")

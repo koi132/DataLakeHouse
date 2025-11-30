@@ -24,6 +24,9 @@
     "max.batch.size": "2048",
     "max.queue.size": "8192",
 
+    "decimal.handling.mode": "string",
+    "time.precision.mode": "connect",
+
     "tombstones.on.delete": "false",
     "heartbeat.interval.ms": "10000"
   }

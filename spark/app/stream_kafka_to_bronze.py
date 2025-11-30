@@ -24,17 +24,20 @@ spark = (
     .getOrCreate()
 )
 
+spark.sparkContext.setLogLevel("WARN")
+
 # schema theo bảng 
+# Sẽ convert sang timestamp chuẩn ở Silver layer
 schemas = {
     "olist.public.olist_orders": StructType([
         StructField("order_id", StringType()),
         StructField("customer_id", StringType()),
         StructField("order_status", StringType()),
-        StructField("order_purchase_timestamp", TimestampType()),
-        StructField("order_approved_at", TimestampType()),
-        StructField("order_delivered_carrier_date", TimestampType()),
-        StructField("order_delivered_customer_date", TimestampType()),
-        StructField("order_estimated_delivery_date", TimestampType())
+        StructField("order_purchase_timestamp", StringType()),
+        StructField("order_approved_at", StringType()),
+        StructField("order_delivered_carrier_date", StringType()),
+        StructField("order_delivered_customer_date", StringType()),
+        StructField("order_estimated_delivery_date", StringType())
     ]),
 
     "olist.public.olist_customers": StructType([
@@ -55,30 +58,30 @@ schemas = {
 
     "olist.public.olist_order_items": StructType([
         StructField("order_id", StringType()),
-        StructField("order_item_id", IntegerType()),
+        StructField("order_item_id", StringType()),
         StructField("product_id", StringType()),
         StructField("seller_id", StringType()),
-        StructField("shipping_limit_date", TimestampType()),
-        StructField("price", DoubleType()),
-        StructField("freight_value", DoubleType())
+        StructField("shipping_limit_date", StringType()),
+        StructField("price", StringType()),
+        StructField("freight_value", StringType())
     ]),
 
     "olist.public.olist_order_payments": StructType([
         StructField("order_id", StringType()),
-        StructField("payment_sequential", IntegerType()),
+        StructField("payment_sequential", StringType()),
         StructField("payment_type", StringType()),
-        StructField("payment_installments", IntegerType()),
-        StructField("payment_value", DoubleType())
+        StructField("payment_installments", StringType()),
+        StructField("payment_value", StringType())
     ]),
 
     "olist.public.olist_order_reviews": StructType([
         StructField("review_id", StringType()),
         StructField("order_id", StringType()),
-        StructField("review_score", IntegerType()),
+        StructField("review_score", StringType()),
         StructField("review_comment_title", StringType()),
         StructField("review_comment_message", StringType()),
-        StructField("review_creation_date", TimestampType()),
-        StructField("review_answer_timestamp", TimestampType())
+        StructField("review_creation_date", StringType()),
+        StructField("review_answer_timestamp", StringType())
     ]),
 
     "olist.public.olist_products": StructType([
@@ -163,7 +166,6 @@ def process_topic(topic_name: str, table_schema: StructType):
     )
 
     return query
-
 
 # Khởi chạy stream cho từng topic
 queries = []

@@ -1,3 +1,15 @@
+-- Drop existing tables (in reverse order due to foreign key constraints)
+DROP TABLE IF EXISTS olist_order_reviews CASCADE;
+DROP TABLE IF EXISTS olist_order_payments CASCADE;
+DROP TABLE IF EXISTS olist_geolocation CASCADE;
+DROP TABLE IF EXISTS olist_order_items CASCADE;
+DROP TABLE IF EXISTS olist_orders CASCADE;
+DROP TABLE IF EXISTS product_category_translation CASCADE;
+DROP TABLE IF EXISTS olist_products CASCADE;
+DROP TABLE IF EXISTS olist_sellers CASCADE;
+DROP TABLE IF EXISTS olist_customers CASCADE;
+
+-- Create tables
 CREATE TABLE olist_customers (
     customer_id TEXT PRIMARY KEY,
     customer_unique_id TEXT,
@@ -16,8 +28,8 @@ CREATE TABLE olist_sellers (
 CREATE TABLE olist_products (
     product_id TEXT PRIMARY KEY,
     product_category_name TEXT,
-    product_name_lenght INT,
-    product_description_lenght INT,
+    product_name_length INT,
+    product_description_length INT,
     product_photos_qty INT,
     product_weight_g INT,
     product_length_cm INT,
