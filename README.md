@@ -28,6 +28,7 @@ Hệ thống Data Lakehouse xử lý và phân tích dữ liệu thương mại 
 | Orchestration | Apache Airflow | 8081 |
 | BI | Metabase | 3000 |
 | Monitoring | Kafka UI | 8084 |
+| API & Chatbot | FastAPI + Gemini AI | 8000 |
 
 ---
 
@@ -144,6 +145,7 @@ io.delta:delta-spark_2.12:3.2.0 \
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
+| **FastAPI Chat** | http://localhost:8000 | - |
 | Airflow | http://localhost:8081 | airflow / airflow |
 | MinIO Console | http://localhost:9001 | admin / password123 |
 | Spark Master UI | http://localhost:8080 | - |
@@ -178,4 +180,76 @@ io.delta:delta-spark_2.12:3.2.0 \
 **Fact Tables:** fact_order_items, fact_reviews
 
 ---
+
+## 🤖 API & AI Chatbot
+
+### Tổng quan
+
+Hệ thống cung cấp REST API và AI Chatbot để truy vấn dữ liệu từ Data Lakehouse thông qua Trino.
+
+
+### Truy cập
+
+| Service | URL | Mô tả |
+|---------|-----|-------|
+| Chat UI | http://localhost:8000 | Giao diện chat với AI |
+| API Docs | http://localhost:8000/docs | Swagger documentation |
+| API List | http://localhost:8000/apis | Danh sách API có sẵn |
+
+### API Endpoints
+
+#### Data APIs
+
+```bash
+# Lấy số lượng khách hàng
+GET http://localhost:8000/api/v1/cus_cnt
+
+# Lấy số lượng sản phẩm  
+GET http://localhost:8000/api/v1/prd_cnt
+
+# Lấy schema của API
+GET http://localhost:8000/api/v1/{api_name}/schema
+```
+
+#### Chatbot APIs
+
+```bash
+# Chat với AI
+POST http://localhost:8000/chat
+Content-Type: application/json
+{
+    "message": "Có bao nhiêu khách hàng?"
+}
+
+# Reset chat history
+POST http://localhost:8000/chat/reset
+
+# Xem lịch sử chat
+GET http://localhost:8000/chat/history
+```
+
+### Cấu hình Gemini API Key
+
+1. Lấy API key từ: https://aistudio.google.com/app/apikey
+
+2. Mở file `api/core/chatbot.py` và thay thế API key:
+
+```python
+GEMINI_API_KEY = "your_api_key_here"  # Thay bằng key của bạn
+```
+
+### Thêm API mới
+
+1. Tạo file SQL trong `api/sql/`:
+```sql
+-- api/sql/my_query.sql
+SELECT * FROM delta.gold.dim_customer LIMIT 100
+```
+
+2. API tự động available tại:
+```
+GET http://localhost:8000/api/v1/my_query
+```
+
+
 
