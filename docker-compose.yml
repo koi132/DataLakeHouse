@@ -272,6 +272,31 @@ services:
     networks:
       - data-network
 
+# ---------- FastAPI ----------
+  fastapi:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: fastapi
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api:/app
+    environment:
+      - TRINO_HOST=trino
+      - TRINO_PORT=8080
+      - TRINO_CATALOG=delta
+      - TRINO_SCHEMA=gold
+      - TRINO_USER=admin
+      - GEMINI_API_KEY=AIzaSyBAPL6GLxqvXGU-JxZJJ4w0uLe3a_QO-tc
+    depends_on:
+      - trino
+    networks:
+      - data-network
+    restart: unless-stopped
+
 networks:
   data-network:
     driver: bridge
