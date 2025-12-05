@@ -46,7 +46,7 @@ process_kafka_to_bronze = BashOperator(
     docker exec spark-master /opt/spark/bin/spark-submit \
       --master local[*] \
       --packages io.delta:delta-spark_2.12:3.2.0,org.apache.hadoop:hadoop-aws:3.3.4,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
-      /opt/spark/app/batch_kafka_to_bronze.py
+      /opt/spark/app/process_kafka_to_bronze.py
     ''',
     dag=dag,
 )
