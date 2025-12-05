@@ -103,16 +103,7 @@ docker exec -it spark-master bash
   /opt/spark/app/process_kafka_to_bronze.py
 ```
 
-### Bước 6: Register Bronze tables vào Hive Metastore
-
-```bash
-/opt/spark/bin/spark-submit \
-  --master spark://spark-master:7077 \
-  --packages io.delta:delta-spark_2.12:3.2.0,org.apache.hadoop:hadoop-aws:3.3.4 \
-  /opt/spark/app/register_bronze_hms.py
-```
-
-### Bước 7: Chạy Bronze → Silver ETL
+### Bước 6: Chạy Bronze → Silver ETL
 
 ```bash
 /opt/spark/bin/spark-submit \
@@ -121,7 +112,7 @@ docker exec -it spark-master bash
   /opt/spark/app/process_bronze_to_silver.py
 ```
 
-### Bước 8: Chạy Silver → Gold ETL
+### Bước 7: Chạy Silver → Gold ETL
 
 ```bash
 /opt/spark/bin/spark-submit \
