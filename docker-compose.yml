@@ -198,7 +198,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=password123
       - AWS_REGION=us-east-1
       - SPARK_WORKER_CORES=10
-      - SPARK_WORKER_MEMORY=4g
+      - SPARK_WORKER_MEMORY=5g
     depends_on:
       - spark-master
     networks:

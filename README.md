@@ -90,33 +90,20 @@ curl.exe -X POST http://localhost:8083/connectors `
 curl -X POST http://localhost:8083/connectors -H "Content-Type: application/json" -d "@connectors/postgres-olist-initial.json"
 ```
 
-### Bước 5: Chạy Spark Streaming (Kafka → Bronze)
+### Bước 5: Chạy Kafka → Bronze ETL
 
 ```bash
 # Vào Spark container
 docker exec -it spark-master bash
 
-# Submit streaming job
+# Submit batch job
 /opt/spark/bin/spark-submit \
   --master spark://spark-master:7077 \
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,\
-org.apache.kafka:kafka-clients:3.5.1,\
-org.apache.hadoop:hadoop-aws:3.3.2,\
-com.amazonaws:aws-java-sdk-bundle:1.12.262,\
-io.delta:delta-spark_2.12:3.2.0 \
-  /opt/spark/app/stream_kafka_to_bronze.py
+  --packages io.delta:delta-spark_2.12:3.2.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.apache.hadoop:hadoop-aws:3.3.4 \
+  /opt/spark/app/process_kafka_to_bronze.py
 ```
 
-### Bước 6: Register Bronze tables vào Hive Metastore
-
-```bash
-/opt/spark/bin/spark-submit \
-  --master spark://spark-master:7077 \
-  --packages io.delta:delta-spark_2.12:3.2.0,org.apache.hadoop:hadoop-aws:3.3.4 \
-  /opt/spark/app/register_bronze_hms.py
-```
-
-### Bước 7: Chạy Bronze → Silver ETL
+### Bước 6: Chạy Bronze → Silver ETL
 
 ```bash
 /opt/spark/bin/spark-submit \
@@ -125,7 +112,7 @@ io.delta:delta-spark_2.12:3.2.0 \
   /opt/spark/app/process_bronze_to_silver.py
 ```
 
-### Bước 8: Chạy Silver → Gold ETL
+### Bước 7: Chạy Silver → Gold ETL
 
 ```bash
 /opt/spark/bin/spark-submit \
