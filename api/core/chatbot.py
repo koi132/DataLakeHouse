@@ -1,14 +1,14 @@
 import os
+from pathlib import Path
 from typing import Dict, Any, List
 from dotenv import load_dotenv
 import logging
 
-load_dotenv()
+env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
-logger = logging.getLogger(__name__)
-
-GEMINI_API_KEY = "gemini api key here"
-os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY or ""
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import tool
