@@ -20,7 +20,7 @@ dag = DAG(
     'bronze_to_silver_processing',
     default_args=default_args,
     description='Process Bronze layer to Silver layer with data quality and transformations',
-    schedule_interval='@daily',  # Run daily, adjust as needed
+    schedule_interval='0 */2 * * *',  # Run every 2 hours
     start_date=days_ago(1),
     catchup=False,
     tags=['olist', 'silver', 'data-quality'],
