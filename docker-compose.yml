@@ -290,7 +290,6 @@ services:
       - TRINO_CATALOG=delta
       - TRINO_SCHEMA=gold
       - TRINO_USER=admin
-      - GEMINI_API_KEY=AIzaSyBAPL6GLxqvXGU-JxZJJ4w0uLe3a_QO-tc
     depends_on:
       - trino
     networks:
