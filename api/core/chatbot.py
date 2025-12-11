@@ -3,12 +3,19 @@ from pathlib import Path
 from typing import Dict, Any, List
 from dotenv import load_dotenv
 import logging
+import traceback
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY or ""
+
+logger.info(f"GEMINI_API_KEY loaded: {'Yes' if GEMINI_API_KEY else 'No'}")
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import tool
@@ -42,7 +49,10 @@ def list_available_apis() -> Dict[str, Any]:
         "available_apis": apis,
         "descriptions": {
             "cus_cnt": "Get customer count from dim_customer table",
-            "prd_cnt": "Get distinct product count from dim_product table"
+            "prd_cnt": "Get distinct product count from dim_product table",
+            "revenue_by_region": "Get revenue analytics by geographic region and state",
+            "top_products_by_category": "Get top 10 selling product categories with sales metrics",
+            "review_analysis": "Get top 10 product categories review sentiment analysis with satisfaction rates"
         }
     }
 
@@ -65,6 +75,9 @@ You help users query and understand data from the available APIs.
 Available APIs:
 - cus_cnt: Returns customer count from the gold layer dim_customer table
 - prd_cnt: Returns distinct product count from the gold layer dim_product table
+- revenue_by_region: Returns revenue analytics grouped by geographic region and state (supports date filters: full_date_from, full_date_to)
+- top_products_by_category: Returns top 20 selling product categories with items sold, order count, total sales and average price
+- review_analysis: Returns top 20 product categories review sentiment analysis including total reviews, average score, positive/negative/neutral counts and satisfaction rate percentage
 
 When users ask about data:
 1. Use get_data tool to fetch the actual data
@@ -80,9 +93,11 @@ class DataChatbot:
             raise ValueError("GEMINI_API_KEY is not set. Please configure it in .env file or environment variables.")
         
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
+            model="gemini-2.0-flash-lite", 
             google_api_key=GEMINI_API_KEY,
-            temperature=0.3
+            temperature=0.3,
+            timeout=60,
+            max_retries=2
         )
         
         self.tools = [get_data, list_available_apis, get_api_schema]
@@ -93,27 +108,47 @@ class DataChatbot:
         )
         
         self.chat_history: List = []
+        logger.info("DataChatbot initialized successfully")
     
     def chat(self, user_message: str) -> str:
-        
-        messages = [SystemMessage(content=SYSTEM_PROMPT)]
-        messages.extend(self.chat_history)
-        messages.append(HumanMessage(content=user_message))
-        
-        response = self.agent.invoke({"messages": messages})
-        
-        # Get the last AI message
-        ai_messages = [m for m in response["messages"] if isinstance(m, AIMessage)]
-        if ai_messages:
-            last_response = ai_messages[-1].content
+        try:
+            logger.info(f"Received message: {user_message[:100]}...")
             
-            # Update history
-            self.chat_history.append(HumanMessage(content=user_message))
-            self.chat_history.append(AIMessage(content=last_response))
+            # Simple test first - direct LLM call without agent
+            if user_message.lower() in ["hello", "hi", "xin chào", "chào"]:
+                logger.info("Simple greeting - responding directly")
+                return "Xin chào! Tôi là Data Lakehouse Assistant. Tôi có thể giúp bạn truy vấn dữ liệu về khách hàng, sản phẩm, doanh thu và đánh giá. Bạn cần hỗ trợ gì?"
             
-            return last_response
-        
-        return "No response generated"
+            messages = [SystemMessage(content=SYSTEM_PROMPT)]
+            messages.extend(self.chat_history)
+            messages.append(HumanMessage(content=user_message))
+            
+            logger.info("Invoking agent...")
+            response = self.agent.invoke(
+                {"messages": messages},
+                {"recursion_limit": 10}  # Limit recursion to prevent infinite loops
+            )
+            logger.info("Agent response received")
+            
+            # Get the last AI message
+            ai_messages = [m for m in response["messages"] if isinstance(m, AIMessage)]
+            if ai_messages:
+                last_response = ai_messages[-1].content
+                
+                # Update history
+                self.chat_history.append(HumanMessage(content=user_message))
+                self.chat_history.append(AIMessage(content=last_response))
+                
+                logger.info(f"Response generated: {str(last_response)[:100]}...")
+                return last_response
+            
+            logger.warning("No AI message in response")
+            return "No response generated"
+            
+        except Exception as e:
+            logger.error(f"Error in chat: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise e
     
     def reset(self):
         self.chat_history = []
@@ -133,6 +168,6 @@ _chatbot_instance = None
 
 def get_chatbot() -> DataChatbot:
     global _chatbot_instance
-    if _chatbot_instance is None:
-        _chatbot_instance = DataChatbot()
+    # Always create new instance to pick up config changes
+    _chatbot_instance = DataChatbot()
     return _chatbot_instance

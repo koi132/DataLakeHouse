@@ -5,6 +5,10 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from datetime import datetime
 import os
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from core import execute_sql_with_filters, get_sql_schema
 from core.chatbot import get_chatbot
@@ -95,13 +99,18 @@ async def list_apis():
 @app.post("/chat", response_model=ChatResponse)
 async def chat_with_bot(request: ChatRequest):
     try:
+        logger.info(f"Chat request received: {request.message[:50]}...")
         chatbot = get_chatbot()
         response = chatbot.chat(request.message)
+        logger.info(f"Chat response generated successfully")
         return ChatResponse(
             response=response,
             timestamp=datetime.now().isoformat()
         )
     except Exception as e:
+        logger.error(f"Chatbot error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Chatbot error: {str(e)}")
 
 
