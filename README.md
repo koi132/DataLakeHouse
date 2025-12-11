@@ -138,7 +138,24 @@ docker exec -it spark-master bash
 | Spark Master UI | http://localhost:8080 | - |
 | Kafka UI | http://localhost:8084 | - |
 | Trino UI | http://localhost:8082 | - |
-| Metabase | http://localhost:3000 | - |
+| Metabase | http://localhost:3000 | nang20012004@gmail.com / Nang@123 |
+
+### Restore Metabase Dashboards
+
+Để restore dashboards và configurations đã tạo sẵn:
+
+```bash
+# Restore Metabase database backup
+docker exec -i postgres psql -U postgres metabase < metabase_backup.sql
+
+# Restart Metabase to apply changes
+docker restart metabase
+```
+
+**Dashboards có sẵn:**
+1. Tổng Quan Doanh Thu (Sales Overview)
+2. Phân Tích Khách Hàng (Customer Analytics)
+3. Hiệu Suất Sản Phẩm (Product Performance)
 
 ---
 
