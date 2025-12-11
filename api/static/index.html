@@ -401,6 +401,9 @@
                 <div class="suggestions">
                     <div class="suggestion" onclick="sendSuggestion('Có bao nhiêu khách hàng?')">Số lượng khách hàng</div>
                     <div class="suggestion" onclick="sendSuggestion('Có bao nhiêu sản phẩm?')">Số lượng sản phẩm</div>
+                    <div class="suggestion" onclick="sendSuggestion('Doanh thu theo vùng địa lý?')">Doanh thu theo vùng</div>
+                    <div class="suggestion" onclick="sendSuggestion('Top sản phẩm bán chạy theo danh mục?')">Top sản phẩm bán chạy</div>
+                    <div class="suggestion" onclick="sendSuggestion('Phân tích đánh giá khách hàng?')">Phân tích đánh giá</div>
                     <div class="suggestion" onclick="sendSuggestion('Liệt kê các API có sẵn')">Danh sách API</div>
                 </div>
             </div>
@@ -502,7 +505,7 @@
 
         async function sendMessage() {
             const message = messageInput.value.trim();
-            if (!message) return;
+            if (!message || sendBtn.disabled) return;
 
             addMessage(message, 'user');
             messageInput.value = '';
@@ -530,10 +533,10 @@
                 hideTyping();
                 console.error('Fetch error:', error);
                 addMessage('Lỗi kết nối: ' + error.message, 'assistant');
+            } finally {
+                sendBtn.disabled = false;
+                messageInput.focus();
             }
-
-            sendBtn.disabled = false;
-            messageInput.focus();
         }
 
         async function resetChat() {
@@ -546,6 +549,9 @@
                         <div class="suggestions">
                             <div class="suggestion" onclick="sendSuggestion('Có bao nhiêu khách hàng?')">Số lượng khách hàng</div>
                             <div class="suggestion" onclick="sendSuggestion('Có bao nhiêu sản phẩm?')">Số lượng sản phẩm</div>
+                            <div class="suggestion" onclick="sendSuggestion('Doanh thu theo vùng?')">Doanh thu theo vùng</div>
+                            <div class="suggestion" onclick="sendSuggestion('Top sản phẩm bán chạy theo danh mục?')">Top sản phẩm bán chạy</div>
+                            <div class="suggestion" onclick="sendSuggestion('Phân tích đánh giá khách hàng?')">Phân tích đánh giá</div>
                             <div class="suggestion" onclick="sendSuggestion('Liệt kê các API có sẵn')">Danh sách API</div>
                         </div>
                     </div>
