@@ -236,11 +236,16 @@ GET http://localhost:8000/chat/history
 
 1. Lấy API key từ: https://aistudio.google.com/app/apikey
 
-2. Mở file `api/core/chatbot.py` và thay thế API key:
+2. Tạo file `.env` trong thư mục gốc của project:
 
-```python
-GEMINI_API_KEY = "your_api_key_here"  # Thay bằng key của bạn
+```bash
+# .env
+GEMINI_API_KEY=your_api_key_here
 ```
+
+3. Thay `your_api_key_here` bằng API key của bạn.
+
+> **Lưu ý:** Không commit file `.env` lên git. File này đã được thêm vào `.gitignore`.
 
 ### Thêm API mới
 
