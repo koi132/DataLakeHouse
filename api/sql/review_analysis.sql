@@ -12,4 +12,4 @@ JOIN delta.gold.dim_product p ON r.product_sk = p.product_sk
 JOIN delta.gold.dim_date d ON r.review_date_sk = d.date_sk
 GROUP BY p.product_category_name_english
 ORDER BY total_reviews DESC
-LIMIT 10
+LIMIT 5
