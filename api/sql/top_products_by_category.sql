@@ -10,4 +10,4 @@ JOIN delta.gold.dim_product p ON f.product_sk = p.product_sk
 JOIN delta.gold.dim_date d ON f.date_sk = d.date_sk
 GROUP BY p.product_category_name_english
 ORDER BY total_sales DESC
-LIMIT 10
+LIMIT 5

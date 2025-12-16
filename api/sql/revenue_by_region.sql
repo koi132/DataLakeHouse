@@ -11,3 +11,4 @@ JOIN delta.gold.dim_geography g ON f.customer_geography_sk = g.geography_sk
 JOIN delta.gold.dim_date d ON f.date_sk = d.date_sk
 GROUP BY g.region, g.state
 ORDER BY total_revenue DESC
+LIMIT 5
