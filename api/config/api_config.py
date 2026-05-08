@@ -7,7 +7,7 @@ def get_available_sql_files():
     try:
         files = os.listdir(SQL_BASE_PATH)
         return [f.replace('.sql', '') for f in files if f.endswith('.sql')]
-    except:
+    except Exception:
         return []
 
 def validate_sql_file_exists(sql_file_name: str) -> bool:

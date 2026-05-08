@@ -1,18 +1,19 @@
+import logging
+import os
+from datetime import datetime
+
 from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from datetime import datetime
-import os
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 from core import execute_sql_with_filters, get_sql_schema
 from core.chatbot import get_chatbot
 from config import get_available_sql_files, validate_sql_file_exists
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Trino SQL API",
@@ -50,16 +51,16 @@ async def get_data_universal(
     request: Request,
     limit: int = Query(50, le=10000, description="Limit results")
 ):
-    
+
     if not validate_sql_file_exists(sql_file_name):
         raise HTTPException(status_code=404, detail=f"SQL file {sql_file_name} not found")
-    
+
     # Get all query parameters as filters
     query_params = dict(request.query_params)
-    query_params.pop('limit', None)  
-    
+    query_params.pop('limit', None)
+
     data = execute_sql_with_filters(sql_file_name, query_params, limit)
-    
+
     return {
         "count": len(data),
         "data": data,
@@ -71,10 +72,10 @@ async def get_data_universal(
 # Get schema information
 @app.get("/api/v1/{sql_file_name}/schema")
 async def get_schema_endpoint(sql_file_name: str):
-    
+
     if not validate_sql_file_exists(sql_file_name):
         raise HTTPException(status_code=404, detail=f"SQL file {sql_file_name} not found")
-    
+
     return get_sql_schema(sql_file_name)
 
 @app.get("/apis")
@@ -102,7 +103,7 @@ async def chat_with_bot(request: ChatRequest):
         logger.info(f"Chat request received: {request.message[:50]}...")
         chatbot = get_chatbot()
         response = chatbot.chat(request.message)
-        logger.info(f"Chat response generated successfully")
+        logger.info("Chat response generated successfully")
         return ChatResponse(
             response=response,
             timestamp=datetime.now().isoformat()
@@ -132,4 +133,4 @@ async def get_chat_history():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    uvicorn.run(app, host="0.0.0.0", port=8000)

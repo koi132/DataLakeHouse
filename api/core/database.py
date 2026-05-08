@@ -1,5 +1,5 @@
 import trino
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any
 from contextlib import contextmanager
 import os
 from datetime import datetime, date
@@ -44,15 +44,15 @@ def get_trino_connection():
 def execute_query(query: str) -> Dict[str, Any]:
     with get_trino_connection() as conn:
         cursor = conn.cursor()
-        
+
         try:
             cursor.execute(query)
-            
+
             # Get column names
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
-            
+
             rows = cursor.fetchall()
-            
+
             # Format data
             data = []
             for row in rows:
@@ -63,13 +63,13 @@ def execute_query(query: str) -> Dict[str, Any]:
                     else:
                         row_dict[columns[i]] = value
                 data.append(row_dict)
-            
+
             return {
                 "count": len(data),
                 "query_executed": query.strip(),
                 "data": data,
                 "columns": columns
             }
-            
+
         finally:
             cursor.close()
