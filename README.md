@@ -28,7 +28,7 @@ Hệ thống Data Lakehouse xử lý và phân tích dữ liệu thương mại 
 | Orchestration | Apache Airflow | 8081 |
 | BI | Metabase | 3000 |
 | Monitoring | Kafka UI | 8084 |
-| API & Chatbot | FastAPI + Gemini AI | 8000 |
+| API & Chatbot | FastAPI + Xiaomi MiMo AI | 8000 |
 
 ---
 
@@ -232,15 +232,17 @@ POST http://localhost:8000/chat/reset
 GET http://localhost:8000/chat/history
 ```
 
-### Cấu hình Gemini API Key
+### Cấu hình Xiaomi MiMo API Key
 
-1. Lấy API key từ: https://aistudio.google.com/app/apikey
+1. Lấy API key từ: https://platform.xiaomimimo.com
 
 2. Tạo file `.env` trong thư mục gốc của project:
 
 ```bash
 # .env
-GEMINI_API_KEY=your_api_key_here
+MIMO_API_KEY=your_api_key_here
+MIMO_BASE_URL=https://api.xiaomimimo.com/v1
+MIMO_MODEL=MiMo-V2.5-Pro
 ```
 
 3. Thay `your_api_key_here` bằng API key của bạn.
