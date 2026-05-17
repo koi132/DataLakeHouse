@@ -5,6 +5,7 @@ from pyspark.sql.functions import (
     date_format, to_date, sum as spark_sum, count as spark_count,
     first,
 )
+
 from pyspark.sql.types import IntegerType, LongType
 
 from config import create_spark_session, get_logger, SILVER_BUCKET, GOLD_BUCKET
@@ -40,7 +41,6 @@ def run(spark):
     df_order_items = spark.read.format("delta").load(f"{SILVER_BUCKET}/olist_order_items/")
     df_orders = spark.read.format("delta").load(f"{SILVER_BUCKET}/olist_orders/")
     df_silver_customers = spark.read.format("delta").load(f"{SILVER_BUCKET}/olist_customers/")
-    df_reviews = spark.read.format("delta").load(f"{SILVER_BUCKET}/olist_order_reviews/")
 
     df_customer_dim = spark.read.format("delta").load(f"{GOLD_BUCKET}/dim_customer/")
     df_seller_dim = spark.read.format("delta").load(f"{GOLD_BUCKET}/dim_seller/")
@@ -68,17 +68,6 @@ def run(spark):
     df_fact = df_fact.join(
         df_silver_customers.select("customer_id", "customer_unique_id"),
         "customer_id", "left",
-    )
-
-    # LEFT JOIN reviews (one review per order, same for all line items)
-    df_fact = df_fact.join(
-        df_reviews.select(
-            "order_id",
-            col("review_score"),
-            col("review_rating"),
-            col("has_comment").alias("review_has_comment"),
-        ),
-        "order_id", "left",
     )
 
     # LEFT JOIN aggregated payments
@@ -113,12 +102,6 @@ def run(spark):
         coalesce(col("total_payment_value"), lit(0)).alias("total_payment_value"),
         coalesce(col("payment_installments"), lit(0)).cast(IntegerType()).alias("payment_installments"),
         coalesce(col("primary_payment_type"), lit("UNKNOWN")).alias("primary_payment_type"),
-        col("review_score"),
-        col("review_rating"),
-        when(col("review_score") >= 4, 1).otherwise(0).alias("is_positive"),
-        when(col("review_score") == 3, 1).otherwise(0).alias("is_neutral"),
-        when(col("review_score") <= 2, 1).otherwise(0).alias("is_negative"),
-        when(col("review_score").isNotNull(), True).otherwise(False).alias("has_review"),
         col("order_purchase_timestamp"),
         col("order_approved_at"),
         col("order_delivered_customer_date"),

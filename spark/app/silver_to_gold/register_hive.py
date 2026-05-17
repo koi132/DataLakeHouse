@@ -12,6 +12,7 @@ GOLD_TABLES_CONFIG = {
     "dim_seller": f"{GOLD_BUCKET}/dim_seller/",
     "dim_product": f"{GOLD_BUCKET}/dim_product/",
     "fact_orders": f"{GOLD_BUCKET}/fact_orders/",
+    "fact_reviews": f"{GOLD_BUCKET}/fact_reviews/",
 }
 
 if __name__ == "__main__":

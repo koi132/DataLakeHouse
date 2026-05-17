@@ -22,7 +22,7 @@ logger = get_logger("data_quality")
 # ---------------------------------------------------------------------------
 # Quality check definitions
 # ---------------------------------------------------------------------------
-SILVER_CHECKS: dict[str, dict] = {
+def get_silver_checks() -> dict[str, dict]: return {
     "olist_customers": {
         "path": "s3a://silver/olist_customers/",
         "primary_keys": ["customer_id"],
@@ -96,7 +96,7 @@ SILVER_CHECKS: dict[str, dict] = {
     },
 }
 
-GOLD_CHECKS: dict[str, dict] = {
+def get_gold_checks() -> dict[str, dict]: return {
     "dim_customer": {
         "path": "s3a://gold/dim_customer/",
         "primary_keys": ["customer_sk"],
@@ -124,6 +124,14 @@ GOLD_CHECKS: dict[str, dict] = {
             "Valid customer FK": col("customer_sk").isNotNull(),
             "Valid product FK": col("product_sk").isNotNull(),
             "Valid seller FK": col("seller_sk").isNotNull(),
+        },
+    },
+    "fact_reviews": {
+        "path": "s3a://gold/fact_reviews/",
+        "primary_keys": ["review_sk"],
+        "rules": {
+            "Valid customer FK": col("customer_sk").isNotNull(),
+            "Valid review score": col("review_score").between(1, 5),
         },
     },
 }
@@ -259,12 +267,14 @@ def _write_quality_log(spark: SparkSession, layer: str, results: list[dict]):
 # ---------------------------------------------------------------------------
 def main_silver(table: str | None = None):
     """Validate Silver layer (all tables, or a single one). Exit 1 on failure."""
+    app = f"DQ_Silver_{table}" if table else "DQ_Silver"
+    spark = create_spark_session(app, "s3a://silver/")
+    
+    SILVER_CHECKS = get_silver_checks()
     if table and table not in SILVER_CHECKS:
         logger.error("Unknown Silver table: %s", table)
         sys.exit(1)
     checks = {table: SILVER_CHECKS[table]} if table else SILVER_CHECKS
-    app = f"DQ_Silver_{table}" if table else "DQ_Silver"
-    spark = create_spark_session(app, "s3a://silver/")
     try:
         ok = run_quality_checks(spark, "silver", checks)
         if not ok:
@@ -277,12 +287,14 @@ def main_silver(table: str | None = None):
 
 def main_gold(table: str | None = None):
     """Validate Gold layer (all tables, or a single one). Exit 1 on failure."""
+    app = f"DQ_Gold_{table}" if table else "DQ_Gold"
+    spark = create_spark_session(app, "s3a://gold/")
+    
+    GOLD_CHECKS = get_gold_checks()
     if table and table not in GOLD_CHECKS:
         logger.error("Unknown Gold table: %s", table)
         sys.exit(1)
     checks = {table: GOLD_CHECKS[table]} if table else GOLD_CHECKS
-    app = f"DQ_Gold_{table}" if table else "DQ_Gold"
-    spark = create_spark_session(app, "s3a://gold/")
     try:
         ok = run_quality_checks(spark, "gold", checks)
         if not ok:
