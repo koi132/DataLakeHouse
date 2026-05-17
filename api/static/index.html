@@ -382,7 +382,7 @@
                 <div class="logo">🗄️</div>
                 <div class="header-info">
                     <h1>Data Lakehouse Assistant</h1>
-                    <span>Powered by Gemini AI</span>
+                    <span>Powered by MiMo AI</span>
                 </div>
             </div>
             <div style="display: flex; align-items: center; gap: 16px;">
@@ -396,15 +396,15 @@
 
         <div class="chat-container" id="chat-container">
             <div class="welcome">
-                <h2>Xin chào!</h2>
-                <p>Tôi có thể giúp bạn truy vấn dữ liệu từ Data Lakehouse</p>
+                <h2>Welcome!</h2>
+                <p>I can help you query data from the Data Lakehouse</p>
                 <div class="suggestions">
-                    <div class="suggestion" onclick="sendSuggestion('Có bao nhiêu khách hàng?')">Số lượng khách hàng</div>
-                    <div class="suggestion" onclick="sendSuggestion('Có bao nhiêu sản phẩm?')">Số lượng sản phẩm</div>
-                    <div class="suggestion" onclick="sendSuggestion('Doanh thu theo vùng địa lý?')">Doanh thu theo vùng</div>
-                    <div class="suggestion" onclick="sendSuggestion('Top sản phẩm bán chạy theo danh mục?')">Top sản phẩm bán chạy</div>
-                    <div class="suggestion" onclick="sendSuggestion('Phân tích đánh giá khách hàng?')">Phân tích đánh giá</div>
-                    <div class="suggestion" onclick="sendSuggestion('Liệt kê các API có sẵn')">Danh sách API</div>
+                    <div class="suggestion" onclick="sendSuggestion('How many customers are there?')">Customer count</div>
+                    <div class="suggestion" onclick="sendSuggestion('How many products are there?')">Product count</div>
+                    <div class="suggestion" onclick="sendSuggestion('Revenue by region?')">Revenue by region</div>
+                    <div class="suggestion" onclick="sendSuggestion('Top selling products by category?')">Top selling products</div>
+                    <div class="suggestion" onclick="sendSuggestion('Customer review analysis?')">Review analysis</div>
+                    <div class="suggestion" onclick="sendSuggestion('List available APIs')">Available APIs</div>
                 </div>
             </div>
         </div>
@@ -413,7 +413,7 @@
             <div class="input-wrapper">
                 <textarea 
                     id="message-input" 
-                    placeholder="Nhập câu hỏi của bạn..." 
+                    placeholder="Type your question..." 
                     rows="1"
                     onkeydown="handleKeyDown(event)"
                 ></textarea>
@@ -527,12 +527,12 @@
                 if (response.ok) {
                     addMessage(data.response, 'assistant');
                 } else {
-                    addMessage('Xin lỗi, đã có lỗi xảy ra: ' + (data.detail || 'Unknown error'), 'assistant');
+                    addMessage('Sorry, an error occurred: ' + (data.detail || 'Unknown error'), 'assistant');
                 }
             } catch (error) {
                 hideTyping();
                 console.error('Fetch error:', error);
-                addMessage('Lỗi kết nối: ' + error.message, 'assistant');
+                addMessage('Connection error: ' + error.message, 'assistant');
             } finally {
                 sendBtn.disabled = false;
                 messageInput.focus();
@@ -544,15 +544,15 @@
                 await fetch(API_BASE + '/chat/reset', { method: 'POST' });
                 chatContainer.innerHTML = `
                     <div class="welcome">
-                        <h2>Xin chào!</h2>
-                        <p>Tôi có thể giúp bạn truy vấn dữ liệu từ Data Lakehouse</p>
+                        <h2>Welcome!</h2>
+                        <p>I can help you query data from the Data Lakehouse</p>
                         <div class="suggestions">
-                            <div class="suggestion" onclick="sendSuggestion('Có bao nhiêu khách hàng?')">Số lượng khách hàng</div>
-                            <div class="suggestion" onclick="sendSuggestion('Có bao nhiêu sản phẩm?')">Số lượng sản phẩm</div>
-                            <div class="suggestion" onclick="sendSuggestion('Doanh thu theo vùng?')">Doanh thu theo vùng</div>
-                            <div class="suggestion" onclick="sendSuggestion('Top sản phẩm bán chạy theo danh mục?')">Top sản phẩm bán chạy</div>
-                            <div class="suggestion" onclick="sendSuggestion('Phân tích đánh giá khách hàng?')">Phân tích đánh giá</div>
-                            <div class="suggestion" onclick="sendSuggestion('Liệt kê các API có sẵn')">Danh sách API</div>
+                            <div class="suggestion" onclick="sendSuggestion('How many customers are there?')">Customer count</div>
+                            <div class="suggestion" onclick="sendSuggestion('How many products are there?')">Product count</div>
+                            <div class="suggestion" onclick="sendSuggestion('Revenue by region?')">Revenue by region</div>
+                            <div class="suggestion" onclick="sendSuggestion('Top selling products by category?')">Top selling products</div>
+                            <div class="suggestion" onclick="sendSuggestion('Customer review analysis?')">Review analysis</div>
+                            <div class="suggestion" onclick="sendSuggestion('List available APIs')">Available APIs</div>
                         </div>
                     </div>
                 `;
