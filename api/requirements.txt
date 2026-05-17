@@ -6,6 +6,6 @@ python-multipart
 PyYAML
 python-dotenv
 langchain
-langchain-google-genai
+langchain-openai
 langgraph
 dotenv

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.prebuilt import create_react_agent
@@ -19,10 +19,11 @@ logger = logging.getLogger(__name__)
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY or ""
+MIMO_API_KEY = os.getenv("MIMO_API_KEY")
+MIMO_BASE_URL = os.getenv("MIMO_BASE_URL", "https://api.xiaomimimo.com/v1")
+MIMO_MODEL = os.getenv("MIMO_MODEL", "MiMo-V2.5-Pro")
 
-logger.info(f"GEMINI_API_KEY loaded: {'Yes' if GEMINI_API_KEY else 'No'}")
+logger.info(f"MIMO_API_KEY loaded: {'Yes' if MIMO_API_KEY else 'No'}")
 
 # Define Tools using LangChain @tool decorator
 @tool
@@ -51,7 +52,7 @@ def list_available_apis() -> Dict[str, Any]:
             "prd_cnt": "Get distinct product count from dim_product table (star schema)",
             "revenue_by_region": "Get revenue analytics by customer region and state from fact_orders",
             "top_products_by_category": "Get top selling product categories with sales metrics from fact_orders",
-            "review_analysis": "Get product categories review sentiment analysis from fact_orders"
+            "review_analysis": "Get product categories review sentiment analysis from fact_reviews"
         }
     }
 
@@ -76,27 +77,28 @@ Available APIs:
 - prd_cnt: Returns distinct product count from the gold layer dim_product table (star schema with embedded category translation)
 - revenue_by_region: Returns revenue analytics grouped by customer region and state from fact_orders joined with dim_customer (supports date filters: full_date_from, full_date_to)
 - top_products_by_category: Returns top selling product categories with items sold, order count, total sales and average price from fact_orders joined with dim_product
-- review_analysis: Returns product categories review sentiment analysis including total reviews, average score, positive/negative/neutral counts and satisfaction rate percentage from fact_orders joined with dim_product
+- review_analysis: Returns product categories review sentiment analysis including total reviews, average score, positive/negative/neutral counts and satisfaction rate percentage from fact_reviews joined with fact_orders and dim_product
 
 When users ask about data:
 1. Use get_data tool to fetch the actual data
 2. Present the results clearly
 3. Provide insights when appropriate
 
-Always be concise and helpful. Answer in the same language as the user's question."""
+Always be concise and helpful. YOU MUST ONLY ANSWER IN ENGLISH. If the user asks a general question not related to the Data Lakehouse, act as a helpful AI assistant and answer their general question in English."""
 
 
 class DataChatbot:
     def __init__(self):
-        if not GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY is not set. Please configure it in .env file or environment variables.")
+        if not MIMO_API_KEY:
+            raise ValueError("MIMO_API_KEY is not set. Please configure it in .env file or environment variables.")
 
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            google_api_key=GEMINI_API_KEY,
+        self.llm = ChatOpenAI(
+            model=MIMO_MODEL,
+            api_key=MIMO_API_KEY,
+            base_url=MIMO_BASE_URL,
             temperature=0.3,
             timeout=60,
-            max_retries=2
+            max_retries=2,
         )
 
         self.tools = [get_data, list_available_apis, get_api_schema]
@@ -116,7 +118,7 @@ class DataChatbot:
             # Simple test first - direct LLM call without agent
             if user_message.lower() in ["hello", "hi", "xin chào", "chào"]:
                 logger.info("Simple greeting - responding directly")
-                return "Xin chào! Tôi là Data Lakehouse Assistant. Tôi có thể giúp bạn truy vấn dữ liệu về khách hàng, sản phẩm, doanh thu và đánh giá. Bạn cần hỗ trợ gì?"
+                return "Hello! I am your Data Lakehouse Assistant. I can help you query data about customers, products, revenue, and reviews. Or we can just chat! How can I help you today?"
 
             messages = [SystemMessage(content=SYSTEM_PROMPT)]
             messages.extend(self.chat_history)

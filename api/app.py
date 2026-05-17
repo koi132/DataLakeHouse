@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Trino SQL API",
-    description="API for SQL queries on Trino with Gemini Chatbot",
+    description="API for SQL queries on Trino with MiMo AI Chatbot",
     version="2.0.0"
 )
 
