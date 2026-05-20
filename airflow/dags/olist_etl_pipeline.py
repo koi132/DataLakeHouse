@@ -38,7 +38,7 @@ from spark_submit_defaults import common_kwargs, SPARK_APP_DIR
 # ---------------------------------------------------------------------------
 DEFAULT_ARGS = {
     "owner": "data-engineering",
-    "retries": 1,
+    "retries": 0,
     "retry_delay": timedelta(minutes=5),
     "execution_timeout": timedelta(hours=2),
 }
