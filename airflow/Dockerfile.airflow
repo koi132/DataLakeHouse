@@ -1,0 +1,21 @@
+FROM ${AIRFLOW_IMAGE_NAME:-apache/airflow:3.2.1}
+
+USER root
+# Install Java for spark-submit
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+         default-jre-headless \
+  && apt-get autoremove -yqq --purge \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_HOME=/usr/lib/jvm/default-java
+
+USER airflow
+RUN pip install --no-cache-dir "pyspark==3.5.1" "apache-airflow-providers-apache-spark>=6.0.1"
+ARG PIP_ADDITIONAL_REQUIREMENTS=""
+
+# Install additional pip requirements provided at build time
+RUN if [ -n "$PIP_ADDITIONAL_REQUIREMENTS" ]; then \
+      pip install --no-cache-dir $PIP_ADDITIONAL_REQUIREMENTS ; \
+    fi
