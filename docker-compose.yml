@@ -406,8 +406,8 @@ services:
     ports:
       - "9000:9000"
       - "9001:9001"
-    volumes:
-      - ./minio_data:/data
+    # volumes:
+    #   - ./minio_data:/data
     networks:
       - data-network
     healthcheck:
