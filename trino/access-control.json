@@ -1,0 +1,9 @@
+{
+  "catalogs": [
+    {
+      "user": ".*",
+      "catalog": ".*",
+      "allow": "read-only"
+    }
+  ]
+}

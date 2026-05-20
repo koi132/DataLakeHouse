@@ -42,8 +42,7 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
-            max-width: 900px;
-            margin: 0 auto;
+            max-width: 100%;
             width: 100%;
         }
 
@@ -227,6 +226,123 @@
             padding: 2px 6px;
             border-radius: 4px;
             font-size: 13px;
+        }
+
+        /* SQL Details Dropdown */
+        .sql-details {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin: 12px 0;
+            overflow: hidden;
+            transition: all 0.2s ease;
+        }
+
+        .sql-details[open] {
+            border-color: var(--accent);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+        }
+
+        .sql-details summary {
+            padding: 12px 16px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--accent-hover);
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            outline: none;
+            list-style: none; /* Hide default arrow */
+        }
+
+        .sql-details summary::-webkit-details-marker {
+            display: none; /* Hide default arrow in webkit */
+        }
+
+        .sql-details summary:hover {
+            background: rgba(99, 102, 241, 0.08);
+            color: var(--text-primary);
+        }
+
+        .sql-details summary .sql-icon {
+            width: 16px;
+            height: 16px;
+            color: var(--accent);
+        }
+
+        .sql-details summary .chevron-icon {
+            width: 16px;
+            height: 16px;
+            margin-left: auto;
+            transition: transform 0.2s ease;
+            color: var(--text-muted);
+        }
+
+        .sql-details[open] summary .chevron-icon {
+            transform: rotate(180deg);
+            color: var(--accent);
+        }
+
+        .sql-details .sql-body {
+            padding: 4px 16px 16px;
+            border-top: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .sql-details pre {
+            margin: 0 !important;
+            background: var(--bg-primary) !important;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        /* Premium Table Styles */
+        .table-container {
+            width: 100%;
+            overflow-x: auto;
+            margin: 16px 0;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+
+        th {
+            background: rgba(99, 102, 241, 0.08);
+            color: var(--accent-hover);
+            font-weight: 600;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.05em;
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            font-family: inherit;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:nth-child(even) td {
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        tr:hover td {
+            background: rgba(99, 102, 241, 0.04);
+            color: white;
         }
 
         /* Typing Indicator */
@@ -473,14 +589,121 @@
         }
 
         function formatMessage(content) {
-            // Code blocks
-            content = content.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+            const placeholders = [];
+
+            // Helper to escape HTML tags inside code to prevent rendering bugs
+            function escapeHtml(text) {
+                return text
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#039;");
+            }
+
+            // Extract and parse Markdown Tables
+            function parseMarkdownTable(rows) {
+                if (rows.length < 2) return rows.join('\n');
+                
+                const headers = rows[0].split('|').map(s => s.trim()).filter((s, idx, arr) => idx > 0 && idx < arr.length - 1);
+                const separator = rows[1];
+                if (!separator.includes('-')) {
+                    return rows.join('\n');
+                }
+                
+                let html = '<div class="table-container"><table><thead><tr>';
+                headers.forEach(h => {
+                    html += `<th>${h}</th>`;
+                });
+                html += '</tr></thead><tbody>';
+                
+                for (let r = 2; r < rows.length; r++) {
+                    const cells = rows[r].split('|').map(s => s.trim()).filter((s, idx, arr) => idx > 0 && idx < arr.length - 1);
+                    html += '<tr>';
+                    for (let c = 0; c < headers.length; c++) {
+                        html += `<td>${cells[c] || ''}</td>`;
+                    }
+                    html += '</tr>';
+                }
+                html += '</tbody></table></div>';
+                return html;
+            }
+
+            // Parse tables from content first
+            const lines = content.split('\n');
+            let inTable = false;
+            let tableRows = [];
+            let processedLines = [];
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (line.startsWith('|') && line.endsWith('|')) {
+                    if (!inTable) {
+                        inTable = true;
+                        tableRows = [];
+                    }
+                    tableRows.push(line);
+                } else {
+                    if (inTable) {
+                        processedLines.push(parseMarkdownTable(tableRows));
+                        inTable = false;
+                    }
+                    processedLines.push(lines[i]);
+                }
+            }
+            if (inTable) {
+                processedLines.push(parseMarkdownTable(tableRows));
+            }
+            content = processedLines.join('\n');
+
+            // 1. Extract SQL code blocks (```sql ... ```)
+            content = content.replace(/```sql\n([\s\S]*?)```/gi, function(match, sqlCode) {
+                const placeholder = `__PLACEHOLDER_SQL_${placeholders.length}__`;
+                placeholders.push({
+                    placeholder: placeholder,
+                    html: `<details class="sql-details">
+                        <summary>
+                            <svg class="sql-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                                <line x1="8" y1="21" x2="16" y2="21"></line>
+                                <line x1="12" y1="17" x2="12" y2="21"></line>
+                            </svg>
+                            <span>View Executed Trino SQL Query</span>
+                            <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </summary>
+                        <div class="sql-body">
+                            <pre><code>${escapeHtml(sqlCode.trim())}</code></pre>
+                        </div>
+                    </details>`
+                });
+                return placeholder;
+            });
+
+            // 2. Extract standard code blocks (```lang ... ```)
+            content = content.replace(/```(\w+)?\n([\s\S]*?)```/g, function(match, lang, code) {
+                const placeholder = `__PLACEHOLDER_CODE_${placeholders.length}__`;
+                placeholders.push({
+                    placeholder: placeholder,
+                    html: `<pre><code>${escapeHtml(code.trim())}</code></pre>`
+                });
+                return placeholder;
+            });
+
+            // 3. Render inline formatting on the remaining structure
             // Inline code
             content = content.replace(/`([^`]+)`/g, '<code>$1</code>');
             // Bold
             content = content.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
             // Line breaks
             content = content.replace(/\n/g, '<br>');
+
+            // 4. Restore the formatted placeholders back
+            placeholders.forEach(item => {
+                content = content.replace(item.placeholder, item.html);
+            });
+
             return content;
         }
 

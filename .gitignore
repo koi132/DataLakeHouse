@@ -1,6 +1,6 @@
 # PostgreSQL data 
 postgres_data/
-
+postgres-db-volume/
 # MinIO object storage
 minio_data/
 
