@@ -99,6 +99,7 @@ class DataChatbot:
             temperature=0.3,
             timeout=60,
             max_retries=2,
+            extra_body={"thinking": {"type": "disabled"}},
         )
 
         self.tools = [get_data, list_available_apis, get_api_schema]
