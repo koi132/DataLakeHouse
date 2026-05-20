@@ -88,7 +88,6 @@ with DAG(
     # =========================================================================
     with TaskGroup("bronze_to_silver") as silver_group:
 
-        # 7 entity transforms run in parallel
         b2s_customers = SparkSubmitOperator(
             task_id="customers",
             **common_kwargs("B2S_Customers", f"{B2S}/customers.py"),
@@ -123,19 +122,28 @@ with DAG(
             **common_kwargs("B2S_RegisterHive", f"{B2S}/register_hive.py"),
         )
 
-        # All 7 transforms run in parallel, then Hive registration
-        for b2s_task in [
-            b2s_customers, b2s_sellers, b2s_products, b2s_orders,
-            b2s_order_items, b2s_order_payments, b2s_order_reviews,
-        ]:
-            b2s_task >> register_silver_hive
+        # Run the Spark jobs one after another so the local cluster does not
+        # need to execute all silver transforms at the same time.
+        silver_tasks = [
+            b2s_customers,
+            b2s_sellers,
+            b2s_products,
+            b2s_orders,
+            b2s_order_items,
+            b2s_order_payments,
+            b2s_order_reviews,
+        ]
+
+        for current_task, next_task in zip(silver_tasks, silver_tasks[1:]):
+            current_task >> next_task
+
+        silver_tasks[-1] >> register_silver_hive
 
     # =========================================================================
     # Stage 3: Silver → Gold
     # =========================================================================
     with TaskGroup("silver_to_gold") as gold_group:
 
-        # Dimensions: date is independent; customer/seller/product depend on silver
         s2g_dim_date = SparkSubmitOperator(
             task_id="dim_date",
             **common_kwargs("S2G_DimDate", f"{S2G}/dim_date.py"),
@@ -168,14 +176,21 @@ with DAG(
             **common_kwargs("S2G_RegisterHive", f"{S2G}/register_hive.py"),
         )
 
-        dims = [s2g_dim_date, s2g_dim_customer, s2g_dim_seller, s2g_dim_product]
-        facts = [s2g_fact_orders, s2g_fact_reviews]
+        # Run the gold Spark jobs one after another so the local cluster does not
+        # need to execute the gold stage in parallel.
+        gold_tasks = [
+            s2g_dim_date,
+            s2g_dim_customer,
+            s2g_dim_seller,
+            s2g_dim_product,
+            s2g_fact_orders,
+            s2g_fact_reviews,
+        ]
 
-        for dim in dims:
-            for fact in facts:
-                dim >> fact
-        for fact in facts:
-            fact >> register_gold_hive
+        for current_task, next_task in zip(gold_tasks, gold_tasks[1:]):
+            current_task >> next_task
+
+        gold_tasks[-1] >> register_gold_hive
 
     # =========================================================================
     # Cross-group dependencies

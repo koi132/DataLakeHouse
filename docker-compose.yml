@@ -50,7 +50,7 @@ x-airflow-common:
   # If `build` is present Docker Compose will build the image (tagged as `image`) and you can
   # pass extra pip requirements via the `_PIP_ADDITIONAL_REQUIREMENTS` env var which will be
   # forwarded to the build as a build-arg `PIP_ADDITIONAL_REQUIREMENTS`.
-  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:3.2.1}
+  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:3.2.1-python3.11}
   build:
     context: ./airflow
     dockerfile: Dockerfile.airflow
@@ -69,6 +69,7 @@ x-airflow-common:
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-airflow_jwt_secret}
     AIRFLOW__API_AUTH__JWT_ISSUER: ${AIRFLOW__API_AUTH__JWT_ISSUER:-airflow}
+    AIRFLOW_CONN_SPARK_DEFAULT: 'spark://spark-master:7077'
     # yamllint disable rule:line-length
     # Use simple http server on scheduler for health checks
     # See https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/check-health.html#scheduler-health-check-server
@@ -315,85 +316,85 @@ services:
       - data-network
     restart: "no"
 
-# ---------- Kafka ----------
-  kafka:
-    image: public.ecr.aws/bitnami/kafka:3.7.0
-    container_name: kafka
-    hostname: kafka
-    environment:
-      - KAFKA_ENABLE_KRAFT=yes
-      - KAFKA_CFG_PROCESS_ROLES=broker,controller
-      - KAFKA_CFG_NODE_ID=1
-      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092      
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
-      - ALLOW_PLAINTEXT_LISTENER=yes
-    ports:
-      - "9092:9092"
-    healthcheck:
-      test: ["CMD", "kafka-topics.sh", "--bootstrap-server=kafka:9092", "--list"]
-      interval: 10s
-      timeout: 10s
-      retries: 10
-    networks:
-      - data-network
-    restart: unless-stopped
+# # ---------- Kafka ----------
+#   kafka:
+#     image: public.ecr.aws/bitnami/kafka:3.7.0
+#     container_name: kafka
+#     hostname: kafka
+#     environment:
+#       - KAFKA_ENABLE_KRAFT=yes
+#       - KAFKA_CFG_PROCESS_ROLES=broker,controller
+#       - KAFKA_CFG_NODE_ID=1
+#       - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+#       - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+#       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092      
+#       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+#       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+#       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+#       - ALLOW_PLAINTEXT_LISTENER=yes
+#     ports:
+#       - "9092:9092"
+#     healthcheck:
+#       test: ["CMD", "kafka-topics.sh", "--bootstrap-server=kafka:9092", "--list"]
+#       interval: 10s
+#       timeout: 10s
+#       retries: 10
+#     networks:
+#       - data-network
+#     restart: unless-stopped
 
-# ---------- Kafka UI ----------
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: kafka-ui
-    ports:
-      - "8084:8080"
-    environment:
-      - KAFKA_CLUSTERS_0_NAME=kraft-cluster
-      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
-      - KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL=PLAINTEXT
-      - KAFKA_CLUSTERS_0_READONLY=false
-      - KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME=debezium-connect
-      - KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS=http://connect:8083
-    depends_on:
-      - kafka
-      - connect
-    networks:
-      - data-network
-    restart: unless-stopped
+# # ---------- Kafka UI ----------
+#   kafka-ui:
+#     image: provectuslabs/kafka-ui:latest
+#     container_name: kafka-ui
+#     ports:
+#       - "8084:8080"
+#     environment:
+#       - KAFKA_CLUSTERS_0_NAME=kraft-cluster
+#       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+#       - KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL=PLAINTEXT
+#       - KAFKA_CLUSTERS_0_READONLY=false
+#       - KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME=debezium-connect
+#       - KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS=http://connect:8083
+#     depends_on:
+#       - kafka
+#       - connect
+#     networks:
+#       - data-network
+#     restart: unless-stopped
 
-# -----------Connect----------
-  connect:
-    image: debezium/connect:2.7.0.Final
-    container_name: connect
-    ports:
-      - "8083:8083"
-    environment:
-      - BOOTSTRAP_SERVERS=kafka:9092
-      - GROUP_ID=1
-      - CONFIG_STORAGE_TOPIC=connect_configs
-      - OFFSET_STORAGE_TOPIC=connect_offsets
-      - STATUS_STORAGE_TOPIC=connect_status
-      - KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter
-      - VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter
-      - VALUE_CONVERTER_SCHEMAS_ENABLE=false
-      - KEY_CONVERTER_SCHEMAS_ENABLE=false
-      - ENABLE_DEBEZIUM_SCRIPTING=false
-    depends_on:
-      - kafka
-      - postgres
-    volumes:
-      - ./connectors:/kafka/connectors
-      # - ./connect_data:/kafka/data
-    networks:
-      - data-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8083/connectors"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
-    restart: unless-stopped
+# # -----------Connect----------
+#   connect:
+#     image: debezium/connect:2.7.0.Final
+#     container_name: connect
+#     ports:
+#       - "8083:8083"
+#     environment:
+#       - BOOTSTRAP_SERVERS=kafka:9092
+#       - GROUP_ID=1
+#       - CONFIG_STORAGE_TOPIC=connect_configs
+#       - OFFSET_STORAGE_TOPIC=connect_offsets
+#       - STATUS_STORAGE_TOPIC=connect_status
+#       - KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+#       - VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+#       - VALUE_CONVERTER_SCHEMAS_ENABLE=false
+#       - KEY_CONVERTER_SCHEMAS_ENABLE=false
+#       - ENABLE_DEBEZIUM_SCRIPTING=false
+#     depends_on:
+#       - kafka
+#       - postgres
+#     volumes:
+#       - ./connectors:/kafka/connectors
+#       # - ./connect_data:/kafka/data
+#     networks:
+#       - data-network
+#     healthcheck:
+#       test: ["CMD", "curl", "-f", "http://localhost:8083/connectors"]
+#       interval: 15s
+#       timeout: 10s
+#       retries: 10
+#       start_period: 30s
+#     restart: unless-stopped
 
 # ---------- MinIO ----------
   minio:
@@ -472,7 +473,10 @@ services:
   
 # ---------- Spark ----------
   spark-master:
-    image: apache/spark:3.5.1
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+    image: custom-spark:3.5.1
     container_name: spark-master
     command: bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master"
     env_file:
@@ -511,7 +515,10 @@ services:
     restart: unless-stopped
 
   spark-worker:
-    image: apache/spark:3.5.1
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+    image: custom-spark:3.5.1
     container_name: spark-worker
     command: bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077"
     env_file:
