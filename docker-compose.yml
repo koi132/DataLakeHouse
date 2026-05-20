@@ -559,6 +559,8 @@ services:
     volumes:
       - ./trino/catalog:/etc/trino/catalog
       - ./trino/config.properties:/etc/trino/config.properties
+      - ./trino/access-control.properties:/etc/trino/access-control.properties
+      - ./trino/access-control.json:/etc/trino/access-control.json
     depends_on:
       hive-metastore:
         condition: service_healthy

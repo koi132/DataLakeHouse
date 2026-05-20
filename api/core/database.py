@@ -1,3 +1,4 @@
+import re
 import trino
 from typing import Dict, Any
 from contextlib import contextmanager
@@ -5,6 +6,19 @@ import os
 from datetime import datetime, date
 import logging
 from dotenv import load_dotenv
+
+# Keywords that must never reach Trino from chatbot-generated queries
+_BLOCKED_KEYWORDS = re.compile(
+    r'\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|MERGE|REPLACE|GRANT|REVOKE)\b',
+    re.IGNORECASE,
+)
+
+def is_safe_query(sql: str) -> tuple[bool, str]:
+    """Return (True, '') if sql is safe to run, else (False, reason)."""
+    match = _BLOCKED_KEYWORDS.search(sql)
+    if match:
+        return False, f"Operation '{match.group().upper()}' is not allowed. Only SELECT queries are permitted."
+    return True, ""
 
 load_dotenv()
 
@@ -73,3 +87,20 @@ def execute_query(query: str) -> Dict[str, Any]:
 
         finally:
             cursor.close()
+
+
+def execute_raw_query(sql: str, limit: int = 50) -> Dict[str, Any]:
+    """Run a chatbot-generated SELECT query with safety checks.
+
+    Raises ValueError if the query contains blocked operations.
+    Injects LIMIT automatically if not present.
+    """
+    safe, reason = is_safe_query(sql)
+    if not safe:
+        raise ValueError(reason)
+
+    sql = sql.strip().rstrip(";")
+    if "LIMIT" not in sql.upper():
+        sql += f" LIMIT {limit}"
+
+    return execute_query(sql)

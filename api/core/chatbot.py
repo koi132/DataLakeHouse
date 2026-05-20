@@ -12,6 +12,7 @@ from langgraph.prebuilt import create_react_agent
 
 from config import get_available_sql_files
 from core.sql_query import execute_sql_with_filters, get_sql_schema
+from core.database import execute_query, execute_raw_query
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,72 +26,191 @@ MIMO_MODEL = os.getenv("MIMO_MODEL", "MiMo-V2.5-Pro")
 
 logger.info(f"MIMO_API_KEY loaded: {'Yes' if MIMO_API_KEY else 'No'}")
 
-# Define Tools using LangChain @tool decorator
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+
+@tool
+def list_tables() -> Dict[str, Any]:
+    """List all tables available in the gold layer of the Data Lakehouse (delta.gold schema)."""
+    try:
+        result = execute_query("SHOW TABLES FROM delta.gold")
+        tables = [row[list(row.keys())[0]] for row in result["data"]]
+        return {"tables": tables, "schema": "delta.gold"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@tool
+def describe_table(table_name: str) -> Dict[str, Any]:
+    """Get column names and data types for a table in delta.gold.
+
+    Args:
+        table_name: Table name without schema prefix, e.g. 'fact_orders' or 'dim_customer'
+    """
+    try:
+        result = execute_query(f"DESCRIBE delta.gold.{table_name}")
+        columns = [
+            {"column": row.get("Column", row.get("column", "")),
+             "type": row.get("Type", row.get("type", ""))}
+            for row in result["data"]
+        ]
+        return {"table": f"delta.gold.{table_name}", "columns": columns}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@tool
+def run_select_query(sql: str, limit: int = 50) -> Dict[str, Any]:
+    """Execute a custom SELECT query against the Trino Data Lakehouse.
+
+    Only SELECT statements are allowed. INSERT, UPDATE, DELETE, DROP, CREATE,
+    ALTER, TRUNCATE, MERGE, REPLACE, GRANT, REVOKE are all blocked.
+    A LIMIT clause will be added automatically if not present.
+    Always use fully-qualified table names: delta.gold.<table_name>.
+
+    Args:
+        sql: A valid Trino SELECT query.
+        limit: Max rows to return (default 50, max 1000).
+    """
+    try:
+        limit = min(limit, 1000)
+        result = execute_raw_query(sql, limit=limit)
+        return {
+            "query_executed": result["query_executed"],
+            "count": result["count"],
+            "columns": result["columns"],
+            "data": result["data"],
+        }
+    except ValueError as e:
+        # Safety guard triggered
+        return {"error": str(e), "blocked": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @tool
 def get_data(api_name: str, limit: int = 50) -> Dict[str, Any]:
-    """Fetch data from SQL API.
+    """Fetch data using a pre-built SQL template by name.
+
+    Available templates: cus_cnt, prd_cnt, revenue_by_region,
+    top_products_by_category, review_analysis.
 
     Args:
-        api_name: Name of the API (cus_cnt for customer count, pro_cnt for product count)
-        limit: Maximum records to return (default 50)
+        api_name: Template name (without .sql extension).
+        limit: Maximum records to return (default 50).
     """
     available = get_available_sql_files()
     if api_name not in available:
-        return {"error": f"API '{api_name}' not found. Available: {available}"}
+        return {"error": f"Template '{api_name}' not found. Available: {available}"}
+    
+    from core.sql_query import load_sql_file
+    try:
+        base_sql = load_sql_file(api_name)
+        if 'LIMIT' not in base_sql.upper():
+            base_sql += f" LIMIT {limit}"
+        query_executed = base_sql
+    except Exception:
+        query_executed = f"SELECT * FROM delta.gold.{api_name} LIMIT {limit}"
 
     data = execute_sql_with_filters(api_name, {}, limit)
-    return {"api": api_name, "count": len(data), "data": data}
-
-@tool
-def list_available_apis() -> Dict[str, Any]:
-    """Get list of all available data APIs with descriptions."""
-    apis = get_available_sql_files()
-    return {
-        "available_apis": apis,
-        "descriptions": {
-            "cus_cnt": "Get customer count from dim_customer table (star schema)",
-            "prd_cnt": "Get distinct product count from dim_product table (star schema)",
-            "revenue_by_region": "Get revenue analytics by customer region and state from fact_orders",
-            "top_products_by_category": "Get top selling product categories with sales metrics from fact_orders",
-            "review_analysis": "Get product categories review sentiment analysis from fact_reviews"
-        }
-    }
-
-@tool
-def get_api_schema(api_name: str) -> Dict[str, Any]:
-    """Get schema information for a specific API.
-
-    Args:
-        api_name: Name of the API to get schema for
-    """
-    available = get_available_sql_files()
-    if api_name not in available:
-        return {"error": f"API '{api_name}' not found. Available: {available}"}
-    return get_sql_schema(api_name)
+    return {"api": api_name, "query_executed": query_executed, "count": len(data), "data": data}
 
 
-SYSTEM_PROMPT = """You are a data analyst assistant for a Data Lakehouse system.
-You help users query and understand data from the available APIs.
+# ---------------------------------------------------------------------------
+# System prompt — full star schema knowledge baked in
+# ---------------------------------------------------------------------------
 
-Available APIs:
-- cus_cnt: Returns customer count from the gold layer dim_customer table (star schema with embedded geography)
-- prd_cnt: Returns distinct product count from the gold layer dim_product table (star schema with embedded category translation)
-- revenue_by_region: Returns revenue analytics grouped by customer region and state from fact_orders joined with dim_customer (supports date filters: full_date_from, full_date_to)
-- top_products_by_category: Returns top selling product categories with items sold, order count, total sales and average price from fact_orders joined with dim_product
-- review_analysis: Returns product categories review sentiment analysis including total reviews, average score, positive/negative/neutral counts and satisfaction rate percentage from fact_reviews joined with fact_orders and dim_product
+SYSTEM_PROMPT = """You are an expert Data Analyst assistant for a Data Lakehouse built on Apache Trino + Delta Lake.
+You can answer ANY question about data in the lakehouse by generating and running Trino SQL.
 
-When users ask about data:
-1. Use get_data tool to fetch the actual data
-2. Present the results clearly
-3. Provide insights when appropriate
+════════════════════════════════════════════
+STAR SCHEMA — delta.gold layer
+════════════════════════════════════════════
 
-Always be concise and helpful. YOU MUST ONLY ANSWER IN ENGLISH. If the user asks a general question not related to the Data Lakehouse, act as a helpful AI assistant and answer their general question in English."""
+FACT TABLES
+───────────
+• fact_orders   — one row per order item
+    order_id, customer_sk, product_sk, date_sk,
+    total_item_value, freight_value, payment_value,
+    order_status, seller_sk
 
+• fact_reviews   — product reviews linked to orders
+    review_id, order_id, product_sk, date_sk,
+    review_score, review_comment_title, review_comment_message
+
+DIMENSION TABLES
+────────────────
+• dim_customer  — customer master
+    customer_sk (PK), customer_id,
+    customer_city, customer_state, customer_region
+
+• dim_product   — product master
+    product_sk (PK), product_id,
+    product_category_name, product_category_name_english,
+    product_weight_g, product_length_cm
+
+• dim_date      — calendar dimension
+    date_sk (PK), full_date, year, month, day,
+    quarter, day_of_week, week_of_year
+
+JOIN KEYS
+─────────
+  fact_orders.customer_sk  → dim_customer.customer_sk
+  fact_orders.product_sk   → dim_product.product_sk
+  fact_orders.date_sk      → dim_date.date_sk
+  fact_reviews.product_sk  → dim_product.product_sk
+  fact_reviews.date_sk     → dim_date.date_sk
+
+════════════════════════════════════════════
+PRE-BUILT TEMPLATES (shortcuts)
+════════════════════════════════════════════
+cus_cnt                 — total customer count
+prd_cnt                 — distinct product count
+revenue_by_region       — revenue grouped by region/state
+top_products_by_category — top categories by sales
+review_analysis         — sentiment breakdown by category
+
+════════════════════════════════════════════
+RULES YOU MUST FOLLOW (CRITICAL & STRICT)
+════════════════════════════════════════════
+1. ONLY generate SELECT queries. Never generate INSERT, UPDATE, DELETE,
+   DROP, CREATE, ALTER, TRUNCATE, MERGE, REPLACE, GRANT, or REVOKE.
+   If the user asks for a write operation, politely refuse and explain why.
+
+2. Always use fully-qualified table names: delta.gold.<table_name>
+
+3. When unsure about columns, call describe_table first.
+
+4. Default LIMIT is 50. Apply LIMIT unless the user explicitly asks for all rows.
+
+5. MANDATORY QUERY INSPECTOR REQUIREMENT:
+   Whenever you run a query using `run_select_query` or load a pre-built template using `get_data`, you MUST include the exact executed SQL query in a ```sql markdown code block in your response. 
+   Do NOT omit it! The frontend UI detects this ```sql block to render an interactive clickable accordion dropdown (query inspector).
+   Example format:
+   ---
+   ### SQL Query Executed
+   ```sql
+   SELECT ...
+   ```
+   ### Results
+   ...
+   ---
+
+6. Provide brief, meaningful insights after returning the data.
+
+7. Language Preference: Always respond in the language the user asked in. If the user asks in Vietnamese ("năm có doanh thu cao nhất"), reply in Vietnamese! If the user asks in English, reply in English! Keep technical SQL code blocks in SQL.
+"""
+
+
+# ---------------------------------------------------------------------------
+# Chatbot class
+# ---------------------------------------------------------------------------
 
 class DataChatbot:
     def __init__(self):
         if not MIMO_API_KEY:
-            raise ValueError("MIMO_API_KEY is not set. Please configure it in .env file or environment variables.")
+            raise ValueError("MIMO_API_KEY is not set. Please configure it in .env file.")
 
         self.llm = ChatOpenAI(
             model=MIMO_MODEL,
@@ -102,12 +222,9 @@ class DataChatbot:
             extra_body={"thinking": {"type": "disabled"}},
         )
 
-        self.tools = [get_data, list_available_apis, get_api_schema]
+        self.tools = [list_tables, describe_table, run_select_query, get_data]
 
-        self.agent = create_react_agent(
-            self.llm,
-            self.tools
-        )
+        self.agent = create_react_agent(self.llm, self.tools)
 
         self.chat_history: List = []
         logger.info("DataChatbot initialized successfully")
@@ -116,11 +233,6 @@ class DataChatbot:
         try:
             logger.info(f"Received message: {user_message[:100]}...")
 
-            # Simple test first - direct LLM call without agent
-            if user_message.lower() in ["hello", "hi", "xin chào", "chào"]:
-                logger.info("Simple greeting - responding directly")
-                return "Hello! I am your Data Lakehouse Assistant. I can help you query data about customers, products, revenue, and reviews. Or we can just chat! How can I help you today?"
-
             messages = [SystemMessage(content=SYSTEM_PROMPT)]
             messages.extend(self.chat_history)
             messages.append(HumanMessage(content=user_message))
@@ -128,20 +240,18 @@ class DataChatbot:
             logger.info("Invoking agent...")
             response = self.agent.invoke(
                 {"messages": messages},
-                {"recursion_limit": 10}  # Limit recursion to prevent infinite loops
+                {"recursion_limit": 15}
             )
             logger.info("Agent response received")
 
-            # Get the last AI message
             ai_messages = [m for m in response["messages"] if isinstance(m, AIMessage)]
             if ai_messages:
                 last_response = ai_messages[-1].content
 
-                # Update history
                 self.chat_history.append(HumanMessage(content=user_message))
                 self.chat_history.append(AIMessage(content=last_response))
 
-                logger.info(f"Response generated: {str(last_response)[:100]}...")
+                logger.info(f"Response: {str(last_response)[:100]}...")
                 return last_response
 
             logger.warning("No AI message in response")
@@ -165,11 +275,10 @@ class DataChatbot:
         return history
 
 
-# Singleton instance
+# Singleton
 _chatbot_instance = None
 
 def get_chatbot() -> DataChatbot:
     global _chatbot_instance
-    # Always create new instance to pick up config changes
     _chatbot_instance = DataChatbot()
     return _chatbot_instance
