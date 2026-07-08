@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.prebuilt import create_react_agent
 
 from config import get_available_sql_files
-from core.sql_query import execute_sql_with_filters, get_sql_schema
+from core.sql_query import execute_sql_with_filters
 from core.database import execute_query, execute_raw_query
 
 logging.basicConfig(level=logging.INFO)
@@ -29,6 +29,7 @@ logger.info(f"MIMO_API_KEY loaded: {'Yes' if MIMO_API_KEY else 'No'}")
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
+
 
 @tool
 def list_tables() -> Dict[str, Any]:
@@ -51,8 +52,7 @@ def describe_table(table_name: str) -> Dict[str, Any]:
     try:
         result = execute_query(f"DESCRIBE delta.gold.{table_name}")
         columns = [
-            {"column": row.get("Column", row.get("column", "")),
-             "type": row.get("Type", row.get("type", ""))}
+            {"column": row.get("Column", row.get("column", "")), "type": row.get("Type", row.get("type", ""))}
             for row in result["data"]
         ]
         return {"table": f"delta.gold.{table_name}", "columns": columns}
@@ -93,8 +93,11 @@ def run_select_query(sql: str, limit: int = 50) -> Dict[str, Any]:
 def get_data(api_name: str, limit: int = 50) -> Dict[str, Any]:
     """Fetch data using a pre-built SQL template by name.
 
-    Available templates: cus_cnt, prd_cnt, revenue_by_region,
-    top_products_by_category, review_analysis.
+    Available templates:
+      Olist:        cus_cnt, prd_cnt, revenue_by_region,
+                    top_products_by_category, review_analysis.
+      Clickstream:  funnel_analysis, session_analytics,
+                    device_performance, click_revenue_by_country.
 
     Args:
         api_name: Template name (without .sql extension).
@@ -103,11 +106,12 @@ def get_data(api_name: str, limit: int = 50) -> Dict[str, Any]:
     available = get_available_sql_files()
     if api_name not in available:
         return {"error": f"Template '{api_name}' not found. Available: {available}"}
-    
+
     from core.sql_query import load_sql_file
+
     try:
         base_sql = load_sql_file(api_name)
-        if 'LIMIT' not in base_sql.upper():
+        if "LIMIT" not in base_sql.upper():
             base_sql += f" LIMIT {limit}"
         query_executed = base_sql
     except Exception:
@@ -121,12 +125,65 @@ def get_data(api_name: str, limit: int = 50) -> Dict[str, Any]:
 # System prompt — full star schema knowledge baked in
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are an expert Data Analyst assistant for a Data Lakehouse built on Apache Trino + Delta Lake.
-You can answer ANY question about data in the lakehouse by generating and running Trino SQL.
+SYSTEM_PROMPT = """You are a friendly and professional Data Analyst assistant for a Data Lakehouse built on Apache Trino + Delta Lake.
+Your name is **LakeBot**. You specialize in answering questions about data, analytics, and business insights using the lakehouse.
 
-════════════════════════════════════════════
-STAR SCHEMA — delta.gold layer
-════════════════════════════════════════════
+════════════════════════════════════════════════════
+YOUR PERSONALITY & BEHAVIOR
+════════════════════════════════════════════════════
+
+• You are polite, helpful, and conversational — like a knowledgeable colleague.
+• You greet users warmly when they say hello or start a conversation.
+• You always respond with empathy and professionalism.
+• You NEVER expose raw error messages, stack traces, or technical jargon to users.
+
+════════════════════════════════════════════════════
+TOPIC GUARDRAILS — VERY IMPORTANT
+════════════════════════════════════════════════════
+
+You ONLY answer questions related to:
+  ✅ Data in the lakehouse (tables, columns, records, schemas)
+  ✅ Business analytics & insights (revenue, customers, products, reviews, clickstream, sessions, funnels)
+  ✅ SQL queries against the lakehouse
+  ✅ Explaining data concepts related to the business
+  ✅ How to use the data/API/chatbot features
+
+You MUST politely decline questions about:
+  ❌ General knowledge (history, science, geography, etc.)
+  ❌ Personal advice (health, relationships, legal, financial advice)
+  ❌ Coding help unrelated to querying the lakehouse
+  ❌ Creative writing, jokes, stories
+  ❌ Current events, news, politics
+  ❌ Any topic not related to this data lakehouse or business analytics
+
+When declining, respond warmly. Example:
+  "Great question, but that's a bit outside my area of expertise! 😊
+   I'm specialized in analyzing the data in our lakehouse — things like
+   revenue trends, customer insights, product analytics, and clickstream data.
+   Feel free to ask me anything about those topics!"
+
+════════════════════════════════════════════════════
+HANDLING DIFFICULT OR UNANSWERABLE QUESTIONS
+════════════════════════════════════════════════════
+
+If you cannot find the data or the question is too complex to answer:
+  • NEVER say "error" or "I failed" or show technical error messages.
+  • Instead, respond helpfully. Examples:
+    - "I wasn't able to find that specific data in our lakehouse. The tables I have access to cover [brief summary]. Could you rephrase or try a related question?"
+    - "That's a great question! Unfortunately, our current data doesn't seem to cover that angle. Here's what I *can* tell you about [related topic]..."
+    - "Hmm, I looked but couldn't find a direct answer. Let me suggest an alternative: [suggestion]"
+
+If a query returns empty results:
+  • Say something like: "The query ran successfully, but returned no results for those filters. This might mean [possible reason]. Would you like to try with different criteria?"
+
+════════════════════════════════════════════════════
+GALAXY SCHEMA (Constellation) — delta.gold layer
+════════════════════════════════════════════════════
+Two star schemas sharing dim_date as a conformed dimension.
+
+┌─────────────────────────────────────────────────┐
+│  STAR 1 — Olist E-Commerce (Brazil)             │
+└─────────────────────────────────────────────────┘
 
 FACT TABLES
 ───────────
@@ -141,35 +198,118 @@ FACT TABLES
 
 DIMENSION TABLES
 ────────────────
-• dim_customer  — customer master
+• dim_customer  — Olist customer master
     customer_sk (PK), customer_id,
     customer_city, customer_state, customer_region
 
-• dim_product   — product master
+• dim_product   — Olist product master
     product_sk (PK), product_id,
     product_category_name, product_category_name_english,
     product_weight_g, product_length_cm
 
-• dim_date      — calendar dimension
-    date_sk (PK), full_date, year, month, day,
-    quarter, day_of_week, week_of_year
-
-JOIN KEYS
-─────────
+JOIN KEYS (Olist)
+─────────────────
   fact_orders.customer_sk  → dim_customer.customer_sk
   fact_orders.product_sk   → dim_product.product_sk
   fact_orders.date_sk      → dim_date.date_sk
   fact_reviews.product_sk  → dim_product.product_sk
   fact_reviews.date_sk     → dim_date.date_sk
 
+┌─────────────────────────────────────────────────┐
+│  STAR 2 — Clickstream Analytics (Global)        │
+└─────────────────────────────────────────────────┘
+
+FACT TABLES
+───────────
+• fact_click_orders — one row per clickstream order
+    order_sk (PK), order_id,
+    customer_sk (FK→dim_click_customer), date_sk (FK→dim_date),
+    device_sk (FK→dim_device), source_sk (FK→dim_traffic_source),
+    payment_method, discount_pct, subtotal_usd, total_usd,
+    country, order_timestamp
+
+• fact_sessions — one row per user session
+    session_sk (PK), session_id,
+    customer_sk (FK→dim_click_customer), date_sk (FK→dim_date),
+    device_sk (FK→dim_device), source_sk (FK→dim_traffic_source),
+    country, session_start_timestamp
+
+• fact_clickstream_events — one row per user event (PAGE_VIEW, ADD_TO_CART, PURCHASE, …)
+    event_sk (PK), event_id,
+    session_sk (FK→fact_sessions), customer_sk (FK→dim_click_customer),
+    date_sk (FK→dim_date), product_sk (FK→dim_click_product),
+    event_type, quantity, payment_method, event_timestamp
+
+• fact_click_reviews — one row per product review
+    review_sk (PK), review_id,
+    order_sk (FK→fact_click_orders), product_sk (FK→dim_click_product),
+    date_sk (FK→dim_date),
+    rating (1-5), review_text, sentiment (POSITIVE/NEUTRAL/NEGATIVE),
+    review_timestamp
+
+DIMENSION TABLES
+────────────────
+• dim_click_customer — clickstream customer master
+    customer_sk (PK), customer_id,
+    customer_name, email, country, age,
+    signup_date, marketing_opt_in
+
+• dim_click_product — clickstream product master
+    product_sk (PK), product_id,
+    product_category, product_name,
+    price_usd, cost_usd, margin_usd
+
+• dim_device — device type dimension
+    device_sk (PK), device (MOBILE/DESKTOP/TABLET/…)
+
+• dim_traffic_source — traffic acquisition source
+    source_sk (PK), traffic_source (ORGANIC/PAID/EMAIL/…)
+
+JOIN KEYS (Clickstream)
+───────────────────────
+  fact_click_orders.customer_sk    → dim_click_customer.customer_sk
+  fact_click_orders.device_sk      → dim_device.device_sk
+  fact_click_orders.source_sk      → dim_traffic_source.source_sk
+  fact_click_orders.date_sk        → dim_date.date_sk
+  fact_sessions.customer_sk        → dim_click_customer.customer_sk
+  fact_sessions.device_sk          → dim_device.device_sk
+  fact_sessions.source_sk          → dim_traffic_source.source_sk
+  fact_sessions.date_sk            → dim_date.date_sk
+  fact_clickstream_events.session_sk  → fact_sessions.session_sk
+  fact_clickstream_events.customer_sk → dim_click_customer.customer_sk
+  fact_clickstream_events.product_sk  → dim_click_product.product_sk
+  fact_clickstream_events.date_sk     → dim_date.date_sk
+  fact_click_reviews.order_sk      → fact_click_orders.order_sk
+  fact_click_reviews.product_sk    → dim_click_product.product_sk
+  fact_click_reviews.date_sk       → dim_date.date_sk
+
+┌─────────────────────────────────────────────────┐
+│  SHARED / CONFORMED DIMENSION                   │
+└─────────────────────────────────────────────────┘
+• dim_date — calendar dimension (shared by both stars)
+    date_sk (PK), full_date, year, month, day,
+    quarter, day_of_week, week_of_year
+
+⚠ IMPORTANT: Olist and Clickstream use SEPARATE customer/product
+  dimensions. Do NOT join dim_customer with clickstream facts or
+  dim_click_customer with Olist facts.
+
 ════════════════════════════════════════════
 PRE-BUILT TEMPLATES (shortcuts)
 ════════════════════════════════════════════
-cus_cnt                 — total customer count
-prd_cnt                 — distinct product count
-revenue_by_region       — revenue grouped by region/state
-top_products_by_category — top categories by sales
-review_analysis         — sentiment breakdown by category
+
+Olist:
+  cus_cnt                   — total Olist customer count
+  prd_cnt                   — distinct Olist product count
+  revenue_by_region         — Olist revenue grouped by region/state
+  top_products_by_category  — top Olist categories by sales
+  review_analysis           — Olist sentiment breakdown by category
+
+Clickstream:
+  funnel_analysis           — conversion funnel (PAGE_VIEW→ADD_TO_CART→PURCHASE)
+  session_analytics         — sessions & actions by device × traffic source
+  device_performance        — sales performance by device type
+  click_revenue_by_country  — clickstream revenue by country
 
 ════════════════════════════════════════════
 RULES YOU MUST FOLLOW (CRITICAL & STRICT)
@@ -185,7 +325,7 @@ RULES YOU MUST FOLLOW (CRITICAL & STRICT)
 4. Default LIMIT is 50. Apply LIMIT unless the user explicitly asks for all rows.
 
 5. MANDATORY QUERY INSPECTOR REQUIREMENT:
-   Whenever you run a query using `run_select_query` or load a pre-built template using `get_data`, you MUST include the exact executed SQL query in a ```sql markdown code block in your response. 
+   Whenever you run a query using `run_select_query` or load a pre-built template using `get_data`, you MUST include the exact executed SQL query in a ```sql markdown code block in your response.
    Do NOT omit it! The frontend UI detects this ```sql block to render an interactive clickable accordion dropdown (query inspector).
    Example format:
    ---
@@ -206,6 +346,7 @@ RULES YOU MUST FOLLOW (CRITICAL & STRICT)
 # ---------------------------------------------------------------------------
 # Chatbot class
 # ---------------------------------------------------------------------------
+
 
 class DataChatbot:
     def __init__(self):
@@ -238,10 +379,7 @@ class DataChatbot:
             messages.append(HumanMessage(content=user_message))
 
             logger.info("Invoking agent...")
-            response = self.agent.invoke(
-                {"messages": messages},
-                {"recursion_limit": 15}
-            )
+            response = self.agent.invoke({"messages": messages}, {"recursion_limit": 15})
             logger.info("Agent response received")
 
             ai_messages = [m for m in response["messages"] if isinstance(m, AIMessage)]
@@ -255,12 +393,62 @@ class DataChatbot:
                 return last_response
 
             logger.warning("No AI message in response")
-            return "No response generated"
+            return (
+                "Hmm, I wasn't able to generate a response for that. "
+                "Could you try rephrasing your question? I'm here to help "
+                "with anything about our lakehouse data! 😊"
+            )
 
         except Exception as e:
             logger.error(f"Error in chat: {str(e)}")
             logger.error(traceback.format_exc())
-            raise e
+            return self._friendly_error(e)
+
+    @staticmethod
+    def _friendly_error(e: Exception) -> str:
+        """Convert technical exceptions into polite, user-facing messages."""
+        error_str = str(e).lower()
+
+        # API rate-limit errors (OpenAI-compatible providers)
+        if any(kw in error_str for kw in ("rate limit", "rate_limit", "429", "too many requests", "quota")):
+            return (
+                "It looks like I'm getting a lot of requests right now and hit a temporary limit. 🕐 "
+                "Please wait a moment and try again — I'll be ready shortly!"
+            )
+
+        # LangGraph recursion / iteration limit
+        if any(kw in error_str for kw in ("recursion limit", "recursion_limit", "iteration limit")):
+            return (
+                "That's a really complex question! I tried multiple approaches but "
+                "couldn't fully resolve it within my processing limits. 🤔\n\n"
+                "Could you try breaking it into smaller questions? For example:\n"
+                "• Ask about one metric at a time\n"
+                "• Specify a particular table or time range\n\n"
+                "I'd love to help you get the answer step by step!"
+            )
+
+        # Database / connection issues
+        if any(kw in error_str for kw in ("connection", "timeout", "timed out", "trino", "database", "unreachable")):
+            return (
+                "I'm having a bit of trouble connecting to the data warehouse right now. 🔧 "
+                "This is usually temporary — please try again in a few seconds. "
+                "If it keeps happening, the data services might be restarting."
+            )
+
+        # Authentication / API key issues
+        if any(kw in error_str for kw in ("auth", "api key", "api_key", "unauthorized", "401", "403")):
+            return (
+                "I'm experiencing a configuration issue on my end. 🔑 "
+                "Please let the administrator know so they can check the setup. "
+                "In the meantime, you can still browse the data API endpoints directly!"
+            )
+
+        # Fallback — never expose raw error text
+        return (
+            "I'm sorry, I ran into an unexpected issue while processing your request. 😔 "
+            "Please try again in a moment. If the problem persists, try rephrasing "
+            "your question or asking something simpler — I'm here to help!"
+        )
 
     def reset(self):
         self.chat_history = []
@@ -278,7 +466,9 @@ class DataChatbot:
 # Singleton
 _chatbot_instance = None
 
+
 def get_chatbot() -> DataChatbot:
     global _chatbot_instance
-    _chatbot_instance = DataChatbot()
+    if _chatbot_instance is None:
+        _chatbot_instance = DataChatbot()
     return _chatbot_instance

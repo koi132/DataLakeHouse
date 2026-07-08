@@ -1,14 +1,14 @@
 import logging
 import os
 from datetime import datetime
-
+import time 
 from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from core import execute_sql_with_filters, get_sql_schema
+from core import execute_sql_with_filters, get_sql_schema, get_trino_connection, execute_raw_query
 from core.chatbot import get_chatbot
 from config import get_available_sql_files, validate_sql_file_exists
 
@@ -44,6 +44,73 @@ class ChatResponse(BaseModel):
     response: str
     timestamp: str
 
+# SQL Editor endpoints
+class SqlExecuteRequest(BaseModel):
+    sql: str
+    limit: int = 100
+
+@app.post("/sql/execute")
+async def execute_sql_direct(request: SqlExecuteRequest):
+    """Execute raw SQL on Trino (SELECT only)."""
+    try:
+        start = time.time()
+        result = execute_raw_query(request.sql, request.limit)
+        result["execution_time_ms"] = round((time.time() - start) * 1000)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Query error: {str(e)}")
+
+
+@app.get("/sql/schemas")
+async def get_schema_tree():
+    """Return catalog -> schema -> table -> columns tree from Trino."""
+    try:
+        with get_trino_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SHOW CATALOGS")
+            catalogs = [row[0] for row in cursor.fetchall()]
+
+            tree = []
+            for cat in catalogs:
+                cat_node = {"name": cat, "type": "catalog", "children": []}
+                try:
+                    cursor.execute(f"SHOW SCHEMAS FROM {cat}")
+                    schemas = [r[0] for r in cursor.fetchall() if r[0] != "information_schema"]
+                    for sch in schemas:
+                        sch_node = {"name": sch, "type": "schema", "children": []}
+                        try:
+                            cursor.execute(
+                                f"SELECT table_name, column_name, data_type "
+                                f"FROM {cat}.information_schema.columns "
+                                f"WHERE table_schema = '{sch}' "
+                                f"ORDER BY table_name, ordinal_position"
+                            )
+                            tables = {}
+                            for tname, cname, dtype in cursor.fetchall():
+                                if tname not in tables:
+                                    tables[tname] = []
+                                tables[tname].append({"name": cname, "type": dtype})
+                            for tname, cols in tables.items():
+                                sch_node["children"].append({"name": tname, "type": "table", "columns": cols})
+                        except Exception:
+                            try:
+                                cursor.execute(f"SHOW TABLES FROM {cat}.{sch}")
+                                for r in cursor.fetchall():
+                                    sch_node["children"].append({"name": r[0], "type": "table", "columns": []})
+                            except Exception:
+                                pass
+                        cat_node["children"].append(sch_node)
+                except Exception:
+                    pass
+                tree.append(cat_node)
+
+            cursor.close()
+        return {"tree": tree}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Schema error: {str(e)}")
+    
 # Dynamic endpoint
 @app.get("/api/v1/{sql_file_name}")
 async def get_data_universal(
@@ -109,10 +176,18 @@ async def chat_with_bot(request: ChatRequest):
             timestamp=datetime.now().isoformat()
         )
     except Exception as e:
+        # Safety net: if even the chatbot fails to initialize, still return
+        # a polite message rather than an HTTP 500 with a raw traceback.
         logger.error(f"Chatbot error: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Chatbot error: {str(e)}")
+        return ChatResponse(
+            response=(
+                "I'm sorry, I'm temporarily unavailable right now. 😔 "
+                "Please try again in a moment — the system may still be starting up."
+            ),
+            timestamp=datetime.now().isoformat()
+        )
 
 
 @app.post("/chat/reset")
